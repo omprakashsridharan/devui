@@ -1,10 +1,11 @@
-use crate::handlers::{api::tables::get_tables, assets::serve_asset, spa::serve_spa};
+use crate::handlers::{api::tables::get_tables, spa::serve_spa};
 use crate::sql::DatabaseConfig;
 use axum::{
     routing::get,
     Router,
 };
 use std::sync::Arc;
+use tower_http::services::ServeDir;
 
 /// Create a DevUI router with all the development tools routes
 ///
@@ -28,14 +29,14 @@ pub fn devui_router(db_config: Option<DatabaseConfig>) -> Router {
     match db_config {
         Some(config) => {
             Router::new()
-                .route("/assets/*path", get(serve_asset))
+                .nest_service("/assets", ServeDir::new("frontend/dist/assets"))
                 .route("/api/tables", get(get_tables))
                 .route("/*path", get(serve_spa))
                 .with_state(Arc::new(config))
         }
         None => {
             Router::new()
-                .route("/assets/*path", get(serve_asset))
+                .nest_service("/assets", ServeDir::new("frontend/dist/assets"))
                 .route("/*path", get(serve_spa))
         }
     }
