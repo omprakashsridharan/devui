@@ -1,0 +1,35 @@
+# Cargo Watch Configuration for DevUI
+# This file configures cargo-watch for optimal development experience
+
+[watch]
+# Watch these directories and files
+paths = ["src", "examples", "Cargo.toml", "Cargo.lock"]
+
+# Ignore these patterns
+ignore = [
+    "target/**",
+    ".git/**",
+    "*.tmp",
+    "*.log"
+]
+
+# Delay before restarting (in seconds)
+delay = 0.5
+
+# Clear screen before restarting
+clear = true
+
+# Show notifications
+notify = true
+
+# Shell command to run
+shell = "echo '🔄 Rebuilding DevUI...' && cargo run --example axum_server"
+
+# Watch for changes in these file extensions
+exts = ["rs", "toml", "md"]
+
+# Restart on these file changes
+restart = ["Cargo.toml", "Cargo.lock"]
+
+# Don't restart on these file changes (just rebuild)
+no-restart = ["src/**/*.rs"]
