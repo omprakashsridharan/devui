@@ -1,9 +1,33 @@
-use crate::middleware::DevUiService;
+use crate::router::devui_router;
 use crate::sql::DatabaseConfig;
-use tower::Layer;
 
-/// A Tower layer that wraps services with the DevUI middleware.
-/// This layer intercepts `/dev/ui` requests and renders the DevUI page.
+/// Helper functions for integrating DevUI with Axum routers.
+///
+/// This module provides utilities to add DevUI routes to existing Axum applications.
+/// The recommended approach is to use `Router::nest("/dev/ui", devui_router())` directly.
+pub struct DevUiIntegration;
+
+impl DevUiIntegration {
+    /// Create a DevUI router with database configuration.
+    ///
+    /// This is a convenience function that creates a router with all DevUI routes
+    /// and the specified database configuration.
+    pub fn with_database_config(config: DatabaseConfig) -> axum::Router {
+        devui_router(Some(config))
+    }
+
+    /// Create a DevUI router without database configuration.
+    ///
+    /// This creates a router with DevUI routes but no database features.
+    pub fn simple() -> axum::Router {
+        devui_router(None)
+    }
+}
+
+/// Legacy DevUiLayer for backward compatibility.
+///
+/// This is kept for backward compatibility but the recommended approach
+/// is to use `Router::nest("/dev/ui", devui_router())` directly.
 #[derive(Clone)]
 pub struct DevUiLayer {
     db_config: Option<DatabaseConfig>,
@@ -23,17 +47,12 @@ impl DevUiLayer {
             db_config: Some(config),
         }
     }
-}
 
-impl<S> Layer<S> for DevUiLayer {
-    type Service = DevUiService<S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        if let Some(config) = &self.db_config {
-            DevUiService::new(inner).with_database_config(config.clone())
-        } else {
-            DevUiService::new(inner)
-        }
+    /// Get the DevUI router for this layer.
+    ///
+    /// This method returns the router that should be nested at `/dev/ui`.
+    pub fn router(&self) -> axum::Router {
+        devui_router(self.db_config.clone())
     }
 }
 

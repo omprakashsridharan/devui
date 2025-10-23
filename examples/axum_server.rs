@@ -3,8 +3,7 @@ use axum::{
     routing::get,
     Router,
 };
-use devui::{DevUiLayer, sql::{DatabaseConfig, PostgresConfig}};
-use tower::ServiceBuilder;
+use devui::{dev_ui_router, sql::{DatabaseConfig, PostgresConfig}};
 use tower_http::trace::TraceLayer;
 
 #[tokio::main]
@@ -27,14 +26,10 @@ async fn main() {
     let app = Router::new()
         .route("/", get(|| async { Html("<h1>Welcome to My App!</h1><p>Visit <a href='/dev/ui'>/dev/ui</a> for development tools.</p>") }))
         .route("/api/health", get(|| async { "OK" }))
-        .route("/api/status", get(|| async { "{\"status\": \"running\"}" }));
-
-    // Apply the DevUI layer with database configuration
-    let app = app.layer(
-        ServiceBuilder::new()
-            .layer(TraceLayer::new_for_http())
-            .layer(DevUiLayer::with_database_config(db_config))
-    );
+        .route("/api/status", get(|| async { "{\"status\": \"running\"}" }))
+        // Add DevUI routes using the new Axum-native approach
+        .nest("/dev/ui", dev_ui_router(Some(db_config)))
+        .layer(TraceLayer::new_for_http());
 
     // Convert Axum router to a Tower service
     let app = app.into_make_service();

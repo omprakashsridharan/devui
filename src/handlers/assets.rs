@@ -1,4 +1,5 @@
 use axum::{
+    extract::Path,
     http::StatusCode,
     response::Response,
 };
@@ -9,7 +10,7 @@ use std::path::Path as StdPath;
 /// Handler for serving static assets
 /// Serves files from the frontend/dist/assets directory
 pub async fn serve_asset(
-    asset_path: String,
+    Path(asset_path): Path<String>,
 ) -> Result<Response<String>, StatusCode> {
     let full_path = StdPath::new("frontend/dist/assets").join(&asset_path);
 

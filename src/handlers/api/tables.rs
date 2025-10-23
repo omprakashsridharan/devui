@@ -1,5 +1,6 @@
 use crate::sql::{DatabaseConfig, postgres::PostgresIntrospector, DatabaseIntrospector};
 use axum::{
+    extract::State,
     http::StatusCode,
     response::Response,
 };
@@ -8,10 +9,9 @@ use std::sync::Arc;
 /// Handler for GET /api/tables endpoint
 /// Returns a list of database tables
 pub async fn get_tables(
-    db_config: Option<Arc<DatabaseConfig>>,
+    State(db_config): State<Arc<DatabaseConfig>>,
 ) -> Result<Response<String>, StatusCode> {
-    if let Some(config) = db_config {
-        if let Some(postgres_config) = config.postgres() {
+    if let Some(postgres_config) = db_config.postgres() {
             match PostgresIntrospector::new(postgres_config).await {
                 Ok(introspector) => {
                     match introspector.get_tables().await {
@@ -33,7 +33,4 @@ pub async fn get_tables(
         } else {
             Err(StatusCode::BAD_REQUEST)
         }
-    } else {
-        Err(StatusCode::BAD_REQUEST)
-    }
 }
