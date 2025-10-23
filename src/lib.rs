@@ -4,6 +4,7 @@
 //! a React-based development tools interface.
 
 pub mod components;
+pub mod handlers;
 pub mod layer;
 pub mod middleware;
 pub mod sql;

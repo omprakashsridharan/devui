@@ -29,11 +29,11 @@ impl<S> Layer<S> for DevUiLayer {
     type Service = DevUiService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        let mut service = DevUiService::new(inner);
         if let Some(config) = &self.db_config {
-            service = service.with_database_config(config.clone());
+            DevUiService::new(inner).with_database_config(config.clone())
+        } else {
+            DevUiService::new(inner)
         }
-        service
     }
 }
 
