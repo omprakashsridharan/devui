@@ -8,6 +8,8 @@ use std::{
     sync::Arc,
 };
 use tower::Service;
+use std::fs;
+use std::path::Path;
 
 /// The DevUI middleware service that intercepts `/dev/ui` requests
 #[pin_project]
@@ -55,33 +57,39 @@ where
         if path.starts_with("/dev/ui") {
             let db_config = self.db_config.clone();
 
-            // Handle static assets (JS, CSS files)
+            // Handle static assets by reading from filesystem
             if path.starts_with("/dev/ui/assets/") {
-                let asset_path = path.strip_prefix("/dev/ui/assets/").unwrap_or(path);
+                let asset_path = path.strip_prefix("/dev/ui/assets/").unwrap_or(path).to_string();
+                let full_path = Path::new("frontend/dist/assets").join(&asset_path);
 
-                // Serve JavaScript files
-                if asset_path.ends_with(".js") {
-                    let js_content = include_str!("../frontend/dist/assets/index-09Jfp7xY.js");
-                    let response = Response::builder()
-                        .status(StatusCode::OK)
-                        .header("content-type", "application/javascript")
-                        .header("cache-control", "public, max-age=31536000")
-                        .body(ResBody::from(js_content.to_string()))
-                        .unwrap();
-                    return Box::pin(async move { Ok(response) });
-                }
+                return Box::pin(async move {
+                    match fs::read_to_string(&full_path) {
+                        Ok(content) => {
+                            let content_type = if asset_path.ends_with(".js") {
+                                "application/javascript"
+                            } else if asset_path.ends_with(".css") {
+                                "text/css"
+                            } else {
+                                "application/octet-stream"
+                            };
 
-                // Serve CSS files
-                if asset_path.ends_with(".css") {
-                    let css_content = include_str!("../frontend/dist/assets/index-BtMMC5Ep.css");
-                    let response = Response::builder()
-                        .status(StatusCode::OK)
-                        .header("content-type", "text/css")
-                        .header("cache-control", "public, max-age=31536000")
-                        .body(ResBody::from(css_content.to_string()))
-                        .unwrap();
-                    return Box::pin(async move { Ok(response) });
-                }
+                            let response = Response::builder()
+                                .status(StatusCode::OK)
+                                .header("content-type", content_type)
+                                .header("cache-control", "public, max-age=31536000")
+                                .body(ResBody::from(content))
+                                .unwrap();
+                            Ok(response)
+                        }
+                        Err(_) => {
+                            let response = Response::builder()
+                                .status(StatusCode::NOT_FOUND)
+                                .body(ResBody::from("Asset not found".to_string()))
+                                .unwrap();
+                            Ok(response)
+                        }
+                    }
+                });
             }
 
             // Handle API endpoints for database data
