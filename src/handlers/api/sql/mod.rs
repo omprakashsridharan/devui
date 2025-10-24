@@ -1,9 +1,9 @@
 pub mod postgres;
 
+use crate::state::SqlState;
 use axum::extract::State;
 use axum::response::Json;
 use serde::{Deserialize, Serialize};
-use crate::state::SqlState;
 
 #[derive(Serialize)]
 pub enum DatabaseType {
@@ -24,7 +24,7 @@ pub struct TableInfo {
 }
 
 /// Database column information
-#[derive(Debug, Clone, Serialize,  PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ColumnInfo {
     pub name: String,
     pub data_type: String,

@@ -1,12 +1,16 @@
-use std::collections::HashMap;
-use axum::Json;
-use http::StatusCode;
-use serde::Serialize;
-use sqlx::Row;
 use crate::extractors::postgres_pool::PostgresPool;
 use crate::handlers::api::sql::{ColumnInfo, TableInfo};
+use axum::Json;
+use http::StatusCode;
+use sqlx::Row;
+use std::collections::HashMap;
 
-pub async fn tables(PostgresPool { connection_name, pool }: PostgresPool) -> Result<Json<Vec<TableInfo>>, StatusCode> {
+pub async fn tables(
+    PostgresPool {
+        connection_name,
+        pool,
+    }: PostgresPool,
+) -> Result<Json<Vec<TableInfo>>, StatusCode> {
     let query = r#"
             SELECT
                 t.table_name,
@@ -75,6 +79,7 @@ pub async fn tables(PostgresPool { connection_name, pool }: PostgresPool) -> Res
             Ok(Json(tables.into_values().collect()))
         }
         Err(e) => {
+            tracing::error!("Failed to fetch tables: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

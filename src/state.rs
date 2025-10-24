@@ -1,5 +1,5 @@
-use crate::services::sql::Config;
 use crate::services::sql::connection_manager::ConnectionManager;
+use crate::services::sql::Config;
 
 #[derive(Clone)]
 pub struct SqlState {

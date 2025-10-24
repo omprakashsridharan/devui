@@ -1,7 +1,7 @@
+mod extractors;
 mod handlers;
 mod router;
 mod services;
-mod extractors;
 mod state;
 
 pub use router::dev_ui_router;

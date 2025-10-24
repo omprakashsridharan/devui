@@ -1,12 +1,12 @@
 use crate::handlers::{postgres_tables, spa::serve_spa, sql_connections};
 use crate::services::sql::connection_manager::{ConnectionManager, ConnectionManagerError};
 use crate::services::sql::Config;
+use crate::state::{DevUIState, SqlState};
 use axum::extract::FromRef;
 use axum::{routing::get, Router};
 use std::sync::Arc;
 use thiserror::Error;
 use tower_http::services::ServeDir;
-use crate::state::{DevUIState, SqlState};
 
 #[derive(Error, Debug)]
 pub enum DevUIError {
@@ -23,7 +23,10 @@ pub async fn dev_ui_router(sql_config_option: Option<Config>) -> Result<Router, 
             Ok(Router::new()
                 .nest_service("/assets", ServeDir::new("frontend/dist/assets"))
                 .route("/api/sql/connections", get(sql_connections))
-                .route("/api/sql/postgres/{connection_name}/tables", get(postgres_tables))
+                .route(
+                    "/api/sql/postgres/{connection_name}/tables",
+                    get(postgres_tables),
+                )
                 .with_state(Arc::new(DevUIState {
                     sql_state: SqlState {
                         config: sql_config,

@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use crate::state::DevUIState;
 use axum::extract::{FromRequestParts, Path};
 use http::request::Parts;
 use http::StatusCode;
 use sqlx::{Pool, Postgres};
-use crate::state::DevUIState;
+use std::sync::Arc;
 
 pub struct PostgresPool {
     pub connection_name: String,
