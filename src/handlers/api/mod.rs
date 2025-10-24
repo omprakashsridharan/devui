@@ -1,3 +1,3 @@
-pub mod tables;
+pub mod sql;
 
-pub use tables::*;
+pub use sql::connections;

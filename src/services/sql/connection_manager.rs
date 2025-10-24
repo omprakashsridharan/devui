@@ -1,15 +1,15 @@
-use std::collections::HashMap;
-use sqlx::{Error, PgPool, Pool, Postgres};
-use sqlx::postgres::PgPoolOptions;
-use thiserror::Error;
 use crate::services::sql::{Config, PostgresConfig};
+use sqlx::postgres::PgPoolOptions;
+use sqlx::{Pool, Postgres};
+use std::collections::HashMap;
+use thiserror::Error;
 
 pub struct ConnectionManager {
     postgres_pools: HashMap<String, Pool<Postgres>>,
 }
 
 #[derive(Error, Debug)]
-pub enum ConnectionManagerError{
+pub enum ConnectionManagerError {
     #[error("sqlx error")]
     SqlxError(#[from] sqlx::Error),
     #[error("connection not found")]
@@ -27,23 +27,26 @@ impl ConnectionManager {
         Ok(Self { postgres_pools })
     }
 
-    async fn create_postgres_connections(config: PostgresConfig) -> Result<Pool<Postgres>, ConnectionManagerError> {
+    async fn create_postgres_connections(
+        config: PostgresConfig,
+    ) -> Result<Pool<Postgres>, ConnectionManagerError> {
         let connection_string = format!(
             "postgres://{}:{}@{}:{}/{}",
-            config.username,
-            config.password,
-            config.host,
-            config.port,
-            config.database
+            config.username, config.password, config.host, config.port, config.database
         );
         let pool = PgPoolOptions::new()
             .max_connections(5)
-            .connect(&connection_string).await.map_err(ConnectionManagerError::SqlxError)?;
+            .connect(&connection_string)
+            .await
+            .map_err(ConnectionManagerError::SqlxError)?;
 
         Ok(pool)
     }
 
-    pub async fn get_postgres_connections(&self, connection_name: String) -> Result<Pool<Postgres>, ConnectionManagerError> {
+    pub async fn get_postgres_connections(
+        &self,
+        connection_name: String,
+    ) -> Result<Pool<Postgres>, ConnectionManagerError> {
         if let Some(pool) = self.postgres_pools.get(&connection_name) {
             Ok(pool.clone())
         } else {
