@@ -1,3 +1,2 @@
-pub mod sql;
 
-pub use sql::connections;
+pub mod sql;

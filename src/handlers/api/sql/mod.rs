@@ -1,3 +1,5 @@
+pub mod postgres;
+
 use crate::router::SqlState;
 use axum::extract::State;
 use axum::response::Json;
