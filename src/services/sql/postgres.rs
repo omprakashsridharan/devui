@@ -1,5 +1,5 @@
-use super::{DatabaseIntrospector, TableInfo, ColumnInfo, QueryResult, PostgresConfig};
-use sqlx::{PgPool, Row, Column};
+use super::{ColumnInfo, DatabaseIntrospector, PostgresConfig, QueryResult, TableInfo};
+use sqlx::{Column, PgPool, Row};
 use std::collections::HashMap;
 
 /// PostgreSQL database introspector
@@ -12,11 +12,7 @@ impl PostgresIntrospector {
     pub async fn new(config: &PostgresConfig) -> Result<Self, sqlx::Error> {
         let connection_string = format!(
             "postgres://{}:{}@{}:{}/{}",
-            config.username,
-            config.password,
-            config.host,
-            config.port,
-            config.database
+            config.username, config.password, config.host, config.port, config.database
         );
 
         let pool = PgPool::connect(&connection_string).await?;
@@ -65,11 +61,14 @@ impl DatabaseIntrospector for PostgresIntrospector {
             let table_key = format!("{}.{}", table_schema, table_name);
 
             if !tables.contains_key(&table_key) {
-                tables.insert(table_key.clone(), TableInfo {
-                    name: table_name,
-                    schema: table_schema,
-                    columns: Vec::new(),
-                });
+                tables.insert(
+                    table_key.clone(),
+                    TableInfo {
+                        name: table_name,
+                        schema: table_schema,
+                        columns: Vec::new(),
+                    },
+                );
             }
 
             if let Some(column_name) = column_name {
@@ -86,14 +85,21 @@ impl DatabaseIntrospector for PostgresIntrospector {
                     default_value: column_default,
                 };
 
-                tables.get_mut(&table_key).unwrap().columns.push(column_info);
+                tables
+                    .get_mut(&table_key)
+                    .unwrap()
+                    .columns
+                    .push(column_info);
             }
         }
 
         Ok(tables.into_values().collect())
     }
 
-    async fn get_table_schema(&self, table_name: &str) -> Result<TableInfo, Box<dyn std::error::Error + Send + Sync>> {
+    async fn get_table_schema(
+        &self,
+        table_name: &str,
+    ) -> Result<TableInfo, Box<dyn std::error::Error + Send + Sync>> {
         let query = r#"
             SELECT
                 t.table_name,
@@ -157,7 +163,10 @@ impl DatabaseIntrospector for PostgresIntrospector {
         Ok(table_info)
     }
 
-    async fn execute_query(&self, query: &str) -> Result<QueryResult, Box<dyn std::error::Error + Send + Sync>> {
+    async fn execute_query(
+        &self,
+        query: &str,
+    ) -> Result<QueryResult, Box<dyn std::error::Error + Send + Sync>> {
         let rows = sqlx::query(query).fetch_all(&self.pool).await?;
 
         if rows.is_empty() {

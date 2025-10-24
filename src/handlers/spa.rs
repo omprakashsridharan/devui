@@ -1,7 +1,4 @@
-use axum::{
-    http::StatusCode,
-    response::Response,
-};
+use axum::{http::StatusCode, response::Response};
 
 /// Handler for serving the React SPA
 /// Returns the main HTML file for all non-API routes

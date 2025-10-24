@@ -1,9 +1,8 @@
-use axum::{
-    response::Html,
-    routing::get,
-    Router,
+use axum::{response::Html, routing::get, Router};
+use devui::{
+    dev_ui_router,
+    services::sql::{Config, PostgresConfig},
 };
-use devui::{dev_ui_router, services::sql::{Config, PostgresConfig}};
 use tower_http::trace::TraceLayer;
 
 #[tokio::main]
@@ -12,17 +11,21 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     // Create database configuration (optional)
-    let sql_config = Config::new()
-        .with_postgres("afp-local".to_string(),PostgresConfig {
+    let sql_config = Config::new().with_postgres(
+        "afp-local".to_string(),
+        PostgresConfig {
             host: "localhost".to_string(),
             port: 5432,
             database: "afp_onboarding".to_string(),
             username: "postgres".to_string(),
             password: "postgres".to_string(),
             ssl_mode: Some("disable".to_string()),
-        });
+        },
+    );
 
-    let dev_ui_router = dev_ui_router(Some(sql_config)).await.expect("error constructing dev_ui_router");
+    let dev_ui_router = dev_ui_router(Some(sql_config))
+        .await
+        .expect("error constructing dev_ui_router");
 
     // Create a basic Axum router with some example routes
     let app = Router::new()

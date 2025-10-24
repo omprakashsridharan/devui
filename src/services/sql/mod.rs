@@ -1,13 +1,13 @@
-pub mod postgres;
 pub mod connection_manager;
+pub mod postgres;
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Database configuration for DevUI
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    pub postgres: HashMap<String,PostgresConfig>,
+    pub postgres: HashMap<String, PostgresConfig>,
 }
 
 /// PostgreSQL connection configuration
@@ -38,7 +38,10 @@ impl Config {
     /// Add PostgreSQL configuration
     pub fn with_postgres(mut self, connection_name: String, config: PostgresConfig) -> Self {
         if self.postgres.contains_key(&connection_name) {
-            panic!("Postgres connection with name {} already exists", connection_name);
+            panic!(
+                "Postgres connection with name {} already exists",
+                connection_name
+            );
         }
         self.postgres.insert(connection_name, config);
         self
@@ -70,10 +73,16 @@ pub trait DatabaseIntrospector {
     async fn get_tables(&self) -> Result<Vec<TableInfo>, Box<dyn std::error::Error + Send + Sync>>;
 
     /// Get table schema information
-    async fn get_table_schema(&self, table_name: &str) -> Result<TableInfo, Box<dyn std::error::Error + Send + Sync>>;
+    async fn get_table_schema(
+        &self,
+        table_name: &str,
+    ) -> Result<TableInfo, Box<dyn std::error::Error + Send + Sync>>;
 
     /// Execute a query and return results
-    async fn execute_query(&self, query: &str) -> Result<QueryResult, Box<dyn std::error::Error + Send + Sync>>;
+    async fn execute_query(
+        &self,
+        query: &str,
+    ) -> Result<QueryResult, Box<dyn std::error::Error + Send + Sync>>;
 }
 
 /// Query execution result

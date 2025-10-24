@@ -4,6 +4,7 @@ use sqlx::{Pool, Postgres};
 use std::collections::HashMap;
 use thiserror::Error;
 
+#[derive(Clone)]
 pub struct ConnectionManager {
     postgres_pools: HashMap<String, Pool<Postgres>>,
 }
