@@ -1,6 +1,6 @@
 use axum::Json;
-use crate::router::PostgresPool;
 use serde::Serialize;
+use crate::extractors::postgres_pool::PostgresPool;
 
 #[derive(Serialize)]
 pub struct TablesResponse {

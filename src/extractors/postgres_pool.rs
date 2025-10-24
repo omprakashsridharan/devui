@@ -1,0 +1,45 @@
+use std::sync::Arc;
+use axum::extract::{FromRequestParts, Path};
+use http::request::Parts;
+use http::StatusCode;
+use sqlx::{Pool, Postgres};
+use crate::state::DevUIState;
+
+pub struct PostgresPool {
+    pub connection_name: String,
+    pub pool: Pool<Postgres>,
+}
+
+impl FromRequestParts<Arc<DevUIState>> for PostgresPool {
+    type Rejection = (StatusCode, String);
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &Arc<DevUIState>,
+    ) -> Result<Self, Self::Rejection> {
+        // Extract the connection_name from the path
+        let path = Path::<String>::from_request_parts(parts, state)
+            .await
+            .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid path".to_string()))?;
+
+        let connection_name = path.to_string();
+
+        // Get the pool from the connection manager
+        let pool = state
+            .sql_state
+            .connection_manager
+            .get_postgres_connections(connection_name.clone())
+            .await
+            .map_err(|_| {
+                (
+                    StatusCode::NOT_FOUND,
+                    format!("Connection '{}' not found", connection_name),
+                )
+            })?;
+
+        Ok(PostgresPool {
+            connection_name,
+            pool,
+        })
+    }
+}

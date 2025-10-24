@@ -1,9 +1,9 @@
 pub mod postgres;
 
-use crate::router::SqlState;
 use axum::extract::State;
 use axum::response::Json;
 use serde::Serialize;
+use crate::state::SqlState;
 
 #[derive(Serialize)]
 pub enum DatabaseType {

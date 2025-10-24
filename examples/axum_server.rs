@@ -1,7 +1,7 @@
 use axum::{response::Html, routing::get, Router};
 use devui::{
     dev_ui_router,
-    services::sql::{Config, PostgresConfig},
+    SqlConfig, PostgresConfig,
 };
 use tower_http::trace::TraceLayer;
 
@@ -11,7 +11,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     // Create database configuration (optional)
-    let sql_config = Config::new().with_postgres(
+    let sql_config = SqlConfig::new().with_postgres(
         "afp-local".to_string(),
         PostgresConfig {
             host: "localhost".to_string(),
