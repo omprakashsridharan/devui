@@ -11,6 +11,7 @@ pub async fn tables(
         pool,
     }: PostgresPool,
 ) -> Result<Json<Vec<TableInfo>>, StatusCode> {
+    tracing::info!("fetching tables for connection {}", connection_name);
     let query = r#"
             SELECT
                 t.table_name,

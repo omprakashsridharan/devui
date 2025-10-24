@@ -3,7 +3,7 @@ pub mod postgres;
 use crate::state::SqlState;
 use axum::extract::State;
 use axum::response::Json;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 #[derive(Serialize)]
 pub enum DatabaseType {
