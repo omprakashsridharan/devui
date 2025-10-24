@@ -24,22 +24,29 @@ impl FromRequestParts<Arc<DevUIState>> for PostgresPool {
 
         let connection_name = path.to_string();
 
-        // Get the pool from the connection manager
-        let pool = state
-            .sql_state
-            .connection_manager
-            .get_postgres_connections(connection_name.clone())
-            .await
-            .map_err(|_| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!("Connection '{}' not found", connection_name),
-                )
-            })?;
+        if let Some(sql_state) = state.sql_state.as_ref() {
+            // Get the pool from the connection manager
+            let pool = sql_state
+                .connection_manager
+                .get_postgres_connections(connection_name.clone())
+                .await
+                .map_err(|_| {
+                    (
+                        StatusCode::NOT_FOUND,
+                        format!("Connection '{}' not found", connection_name),
+                    )
+                })?;
 
-        Ok(PostgresPool {
-            connection_name,
-            pool,
-        })
+            Ok(PostgresPool {
+                connection_name,
+                pool,
+            })
+        } else {
+            Err((
+                StatusCode::NOT_FOUND,
+                "Sql config not found".to_string(),
+            ))
+        }
+
     }
 }

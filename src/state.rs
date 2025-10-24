@@ -9,5 +9,5 @@ pub struct SqlState {
 
 #[derive(Clone)]
 pub struct DevUIState {
-    pub sql_state: SqlState,
+    pub sql_state: Option<SqlState>,
 }
