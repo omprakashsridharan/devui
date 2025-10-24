@@ -2,7 +2,7 @@ pub mod postgres;
 
 use axum::extract::State;
 use axum::response::Json;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use crate::state::SqlState;
 
 #[derive(Serialize)]
@@ -14,6 +14,23 @@ pub enum DatabaseType {
 pub struct ConnectionResponseItem {
     name: String,
     database_type: DatabaseType,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct TableInfo {
+    pub name: String,
+    pub schema: String,
+    pub columns: Vec<ColumnInfo>,
+}
+
+/// Database column information
+#[derive(Debug, Clone, Serialize,  PartialEq)]
+pub struct ColumnInfo {
+    pub name: String,
+    pub data_type: String,
+    pub is_nullable: bool,
+    pub is_primary_key: bool,
+    pub default_value: Option<String>,
 }
 
 pub async fn connections(State(sql_state): State<SqlState>) -> Json<Vec<ConnectionResponseItem>> {

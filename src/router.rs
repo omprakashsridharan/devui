@@ -23,7 +23,7 @@ pub async fn dev_ui_router(sql_config_option: Option<Config>) -> Result<Router, 
             Ok(Router::new()
                 .nest_service("/assets", ServeDir::new("frontend/dist/assets"))
                 .route("/api/sql/connections", get(sql_connections))
-                .route("/api/sql/postgres/{connection_name}", get(postgres_tables))
+                .route("/api/sql/postgres/{connection_name}/tables", get(postgres_tables))
                 .with_state(Arc::new(DevUIState {
                     sql_state: SqlState {
                         config: sql_config,

@@ -47,58 +47,40 @@ impl Config {
         self
     }
 }
+// 
+// /// Database introspection trait
+// #[async_trait::async_trait]
+// pub trait DatabaseIntrospector {
+//     /// Get all tables in the database
+//     async fn get_tables(&self) -> Result<Vec<TableInfo>, Box<dyn std::error::Error + Send + Sync>>;
+// 
+//     /// Get table schema informationq
+//     async fn get_table_schema(
+//         &self,
+//         table_name: &str,
+//     ) -> Result<TableInfo, Box<dyn std::error::Error + Send + Sync>>;
+// 
+//     /// Execute a query and return results
+//     async fn execute_query(
+//         &self,
+//         query: &str,
+//     ) -> Result<QueryResult, Box<dyn std::error::Error + Send + Sync>>;
+// }
+// 
+// /// Query execution result
+// #[derive(Debug, Clone, Serialize, Deserialize)]
+// pub struct QueryResult {
+//     pub columns: Vec<String>,
+//     pub rows: Vec<Vec<serde_json::Value>>,
+//     pub row_count: usize,
+// }
 
-/// Database table information
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TableInfo {
-    pub name: String,
-    pub schema: String,
-    pub columns: Vec<ColumnInfo>,
-}
-
-/// Database column information
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ColumnInfo {
-    pub name: String,
-    pub data_type: String,
-    pub is_nullable: bool,
-    pub is_primary_key: bool,
-    pub default_value: Option<String>,
-}
-
-/// Database introspection trait
-#[async_trait::async_trait]
-pub trait DatabaseIntrospector {
-    /// Get all tables in the database
-    async fn get_tables(&self) -> Result<Vec<TableInfo>, Box<dyn std::error::Error + Send + Sync>>;
-
-    /// Get table schema information
-    async fn get_table_schema(
-        &self,
-        table_name: &str,
-    ) -> Result<TableInfo, Box<dyn std::error::Error + Send + Sync>>;
-
-    /// Execute a query and return results
-    async fn execute_query(
-        &self,
-        query: &str,
-    ) -> Result<QueryResult, Box<dyn std::error::Error + Send + Sync>>;
-}
-
-/// Query execution result
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueryResult {
-    pub columns: Vec<String>,
-    pub rows: Vec<Vec<serde_json::Value>>,
-    pub row_count: usize,
-}
-
-impl QueryResult {
-    pub fn new() -> Self {
-        Self {
-            columns: Vec::new(),
-            rows: Vec::new(),
-            row_count: 0,
-        }
-    }
-}
+// impl QueryResult {
+//     pub fn new() -> Self {
+//         Self {
+//             columns: Vec::new(),
+//             rows: Vec::new(),
+//             row_count: 0,
+//         }
+//     }
+// }
