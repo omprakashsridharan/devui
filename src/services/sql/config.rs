@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -30,20 +30,20 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Create a new database configuration
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Add PostgreSQL configuration
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
     pub fn with_postgres(mut self, connection_name: String, config: PostgresConfig) -> Self {
         if self.database_configs.contains_key(&connection_name) {
-            panic!(
-                "Connection with name {} already exists",
-                connection_name
-            );
+            panic!("Connection with name {} already exists", connection_name);
         }
-        self.database_configs.insert(connection_name, DatabaseConfig::Postgres(config));
+        self.database_configs
+            .insert(connection_name, DatabaseConfig::Postgres(config));
         self
     }
 }

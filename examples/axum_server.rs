@@ -1,5 +1,5 @@
 use axum::{response::Html, routing::get, Router};
-use devui::{dev_ui_router, PostgresConfig, SqlConfig};
+use devui::{dev_ui_router, DevUIConfigBuilder, DevUIConfigBuilderError, PostgresConfig, SqlConfig};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 #[tokio::main]
@@ -20,7 +20,9 @@ async fn main() {
         },
     );
 
-    let dev_ui_router = dev_ui_router(Some(sql_config))
+    let dev_ui_config = DevUIConfigBuilder::default().sql_config(sql_config).build().expect("Error building dev ui config");
+
+    let dev_ui_router = dev_ui_router(dev_ui_config)
         .await
         .expect("error constructing dev_ui_router");
 

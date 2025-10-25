@@ -4,6 +4,7 @@ pub(crate) use crate::services::sql::connection_manager::{
 };
 use crate::services::sql::connection_pool::ConnectionPoolError;
 use crate::services::sql::models::TableInfo;
+use crate::SqlConfig;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -21,10 +22,13 @@ pub enum SqlServiceError {
 }
 
 impl Service {
-    pub fn new(connection_manager: ConnectionManager) -> Self {
-        Self {
+    pub async fn new(sql_config: SqlConfig) -> Result<Self, SqlServiceError> {
+        let connection_manager = ConnectionManager::new(sql_config.clone())
+            .await
+            .map_err(SqlServiceError::ConnectionManagerError)?;
+        Ok(Self {
             connection_manager: Arc::new(connection_manager),
-        }
+        })
     }
 
     pub fn get_connections(self) -> Vec<(String, DatabaseType)> {
