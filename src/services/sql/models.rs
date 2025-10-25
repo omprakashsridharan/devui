@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -15,4 +16,10 @@ pub struct ColumnInfo {
     pub is_nullable: bool,
     pub is_primary_key: bool,
     pub default_value: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct TableRow {
+    pub columns: HashSet<String>,
+    pub data: HashMap<String, String>,
 }

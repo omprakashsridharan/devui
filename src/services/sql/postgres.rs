@@ -1,10 +1,12 @@
 use crate::handlers::api::sql::DatabaseType;
 use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
-use crate::services::sql::models::{ColumnInfo, TableInfo};
+use crate::services::sql::models::{ColumnInfo, TableInfo, TableRow};
 use sqlx::postgres::PgPoolOptions;
-use sqlx::{Pool, Postgres, Row};
-use std::collections::HashMap;
+use sqlx::types::chrono::{DateTime, Utc};
+use sqlx::types::Json;
+use sqlx::{Column, Pool, Postgres, Row, TypeInfo};
+use std::collections::{HashMap, HashSet};
 
 pub struct PostgresConnectionPool {
     pool: Pool<Postgres>,
@@ -12,9 +14,7 @@ pub struct PostgresConnectionPool {
 
 impl PostgresConnectionPool {
     pub fn new(pool: Pool<Postgres>) -> Self {
-        Self {
-            pool,
-        }
+        Self { pool }
     }
 
     pub async fn create_pool(
@@ -119,6 +119,58 @@ impl ConnectionPool for PostgresConnectionPool {
             }
             Err(e) => {
                 tracing::error!("Failed to fetch tables: {}", e);
+                Err(ConnectionPoolError::SqlxError(e))
+            }
+        }
+    }
+
+    async fn table_data(&self, table_name: String) -> Result<Vec<TableRow>, ConnectionPoolError> {
+        let query = format!("SELECT * FROM {table_name} limit 10");
+        match sqlx::query(&query).fetch_all(&self.pool).await {
+            Ok(rows) => {
+                let mut table_data: Vec<TableRow> = Vec::new();
+                for row in rows {
+                    let mut table_row_data: HashMap<String, String> = HashMap::new();
+                    let mut columns_info: HashSet<String> = HashSet::new();
+                    let columns = row.columns();
+                    for column in columns {
+                        let type_info = column.type_info();
+                        columns_info.insert(column.name().to_string());
+
+                        match type_info.name() {
+                            "INT4" => {
+                                let value: i32 = row.get(column.name());
+                                table_row_data.insert(column.name().to_string(), value.to_string());
+                            }
+                            "TIMESTAMPTZ" => {
+                                let value: DateTime<Utc> = row.get(column.name());
+                                table_row_data.insert(column.name().to_string(), value.to_string());
+                            }
+                            "JSONB" => {
+                                let value: Json<serde_json::Value> = row.get(column.name());
+                                table_row_data.insert(column.name().to_string(), value.to_string());
+                            }
+                            _ => {
+                                let value: Option<String> = row.get(column.name());
+                                if let Some(value) = value {
+                                    table_row_data.insert(column.name().to_string(), value);
+                                } else {
+                                    table_row_data
+                                        .insert(column.name().to_string(), "".to_string());
+                                }
+                            }
+                        }
+                    }
+                    table_data.push(TableRow {
+                        columns: columns_info,
+                        data: table_row_data,
+                    })
+                }
+
+                Ok(table_data)
+            }
+            Err(e) => {
+                tracing::error!("Failed to fetch table data: {}", e);
                 Err(ConnectionPoolError::SqlxError(e))
             }
         }

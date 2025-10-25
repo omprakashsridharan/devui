@@ -1,5 +1,5 @@
 use crate::handlers::api::sql::DatabaseType;
-use crate::services::sql::models::TableInfo;
+use crate::services::sql::models::{TableInfo, TableRow};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -15,4 +15,6 @@ pub trait ConnectionPool: Send + Sync {
     fn database_type(&self) -> DatabaseType;
 
     async fn tables(&self) -> Result<Vec<TableInfo>, ConnectionPoolError>;
+
+    async fn table_data(&self, table_name: String) -> Result<Vec<TableRow>, ConnectionPoolError>;
 }
