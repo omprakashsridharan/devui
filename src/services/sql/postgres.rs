@@ -2,7 +2,7 @@ use crate::handlers::api::sql::DatabaseType;
 use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
 use crate::services::sql::models::{ColumnInfo, TableInfo, TableRow};
-use sqlx::postgres::{PgPoolOptions, PgTypeKind};
+use sqlx::postgres::PgPoolOptions;
 use sqlx::types::chrono::{DateTime, Utc};
 use sqlx::types::Json;
 use sqlx::{Column, Pool, Postgres, Row, TypeInfo};
@@ -154,7 +154,11 @@ impl ConnectionPool for PostgresConnectionPool {
             }
         }
 
-        let query = format!("SELECT {} FROM {} LIMIT 10", select_parts.join(", "), table_name);
+        let query = format!(
+            "SELECT {} FROM {} LIMIT 10",
+            select_parts.join(", "),
+            table_name
+        );
         match sqlx::query(&query).fetch_all(&self.pool).await {
             Ok(rows) => {
                 let mut table_data: Vec<TableRow> = Vec::new();
@@ -168,18 +172,15 @@ impl ConnectionPool for PostgresConnectionPool {
                         match type_info.name() {
                             "INT4" => {
                                 let value: i32 = row.get(column.name());
-                                table_row_data
-                                    .insert(column.name().to_string(), value.to_string());
+                                table_row_data.insert(column.name().to_string(), value.to_string());
                             }
                             "TIMESTAMPTZ" => {
                                 let value: DateTime<Utc> = row.get(column.name());
-                                table_row_data
-                                    .insert(column.name().to_string(), value.to_string());
+                                table_row_data.insert(column.name().to_string(), value.to_string());
                             }
                             "JSONB" => {
                                 let value: Json<serde_json::Value> = row.get(column.name());
-                                table_row_data
-                                    .insert(column.name().to_string(), value.to_string());
+                                table_row_data.insert(column.name().to_string(), value.to_string());
                             }
                             _ => {
                                 let value: Option<String> = row.get(column.name());
