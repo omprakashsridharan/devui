@@ -3,11 +3,11 @@ use axum::extract::{FromRef, FromRequestParts, Path};
 use std::sync::Arc;
 use http::request::Parts;
 use http::StatusCode;
-use crate::services::sql::connection_manager::ConnectionPool;
+use crate::services::sql::connection_manager::ConnectionPoolType;
 
 pub struct SqlPool {
     pub connection_name: String,
-    pub pool: ConnectionPool,
+    pub pool: ConnectionPoolType,
 }
 
 impl FromRequestParts<Arc<DevUIState>> for SqlPool{
