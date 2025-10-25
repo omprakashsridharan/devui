@@ -18,6 +18,7 @@ import {
   Code as CodeIcon,
   Menu as MenuIcon,
   ChevronLeft as ChevronLeftIcon,
+  Api as ApiIcon,
 } from '@mui/icons-material';
 
 const DRAWER_WIDTH = 240;
@@ -39,6 +40,11 @@ const menuItems: MenuItem[] = [
     text: 'SQL Editor',
     path: '/sql',
     icon: <CodeIcon />,
+  },
+  {
+    text: 'API Test',
+    path: '/api-test',
+    icon: <ApiIcon />,
   },
 ];
 

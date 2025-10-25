@@ -4,6 +4,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import Layout from './components/Layout';
 import Home from './components/Home';
 import SqlEditor from './components/SqlEditor';
+import ApiTest from './components/ApiTest';
 
 const theme = createTheme({
   palette: {
@@ -22,6 +23,7 @@ function App() {
           <Route path="/" element={<Layout />}>
             <Route index element={<Home />} />
             <Route path="sql" element={<SqlEditor />} />
+            <Route path="api-test" element={<ApiTest />} />
           </Route>
         </Routes>
       </Router>

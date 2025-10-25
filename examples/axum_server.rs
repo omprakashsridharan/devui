@@ -1,6 +1,6 @@
 use axum::{response::Html, routing::get, Router};
 use devui::{dev_ui_router, PostgresConfig, SqlConfig};
-use tower_http::trace::TraceLayer;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 #[tokio::main]
 async fn main() {
@@ -31,6 +31,12 @@ async fn main() {
         .route("/api/status", get(|| async { "{\"status\": \"running\"}" }))
         // Add DevUI routes using the new Axum-native approach
         .nest("/dev/ui", dev_ui_router)
+        .layer(
+            CorsLayer::new()
+                .allow_origin("http://localhost:5173".parse::<axum::http::HeaderValue>().unwrap())
+                .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::PUT, axum::http::Method::DELETE])
+                .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::AUTHORIZATION])
+        )
         .layer(TraceLayer::new_for_http());
 
     // Convert Axum router to a Tower service
