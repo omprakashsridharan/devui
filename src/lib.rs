@@ -5,5 +5,5 @@ mod services;
 mod state;
 
 pub use router::dev_ui_router;
-pub use services::sql::Config as SqlConfig;
-pub use services::sql::PostgresConfig;
+pub use services::sql::config::Config as SqlConfig;
+pub use services::sql::config::PostgresConfig;

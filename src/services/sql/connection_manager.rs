@@ -1,4 +1,6 @@
-use crate::services::sql::{Config, PostgresConfig};
+use crate::handlers::api::sql::DatabaseType;
+use crate::services::sql::config::{Config, DatabaseConfig, PostgresConfig};
+use crate::services::sql::connection_pool::ConnectionPool;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
 use std::collections::HashMap;
@@ -6,7 +8,7 @@ use thiserror::Error;
 
 #[derive(Clone)]
 pub struct ConnectionManager {
-    postgres_pools: HashMap<String, Pool<Postgres>>,
+    pools: HashMap<String, ConnectionPool>,
 }
 
 #[derive(Error, Debug)]
@@ -18,14 +20,18 @@ pub enum ConnectionManagerError {
 }
 
 impl ConnectionManager {
-    pub async fn new(config: Config) -> Result<Self, ConnectionManagerError> {
-        let mut postgres_pools: HashMap<String, Pool<Postgres>> = HashMap::new();
-        for (connection_name, postgres_config) in config.postgres {
-            let pool = Self::create_postgres_connections(postgres_config).await?;
-            postgres_pools.insert(connection_name.to_string(), pool);
-            tracing::info!("created postgres connection pool for {}", connection_name);
+    pub async fn new(sql_config: Config) -> Result<Self, ConnectionManagerError> {
+        let mut pools: HashMap<String, ConnectionPool> = HashMap::new();
+        for (connection_name, database_config) in sql_config.database_configs {
+            match database_config {
+                DatabaseConfig::Postgres(postgres_config) => {
+                    let pool = Self::create_postgres_connections(postgres_config).await?;
+                    pools.insert(connection_name.to_string(), ConnectionPool::Postgres(pool));
+                    tracing::info!("created postgres connection pool for {}", connection_name);
+                }
+            }
         }
-        Ok(Self { postgres_pools })
+        Ok(Self { pools })
     }
 
     async fn create_postgres_connections(
@@ -44,14 +50,27 @@ impl ConnectionManager {
         Ok(pool)
     }
 
-    pub async fn get_postgres_connections(
+    pub fn get_connections(&self) -> Vec<(String, ConnectionPool)> {
+        self.pools
+            .clone()
+            .into_iter()
+            .map(|(cn, cp)| (cn, cp))
+            .collect()
+    }
+
+    pub fn get_connection(
         &self,
         connection_name: String,
-    ) -> Result<Pool<Postgres>, ConnectionManagerError> {
-        if let Some(pool) = self.postgres_pools.get(&connection_name) {
-            Ok(pool.clone())
-        } else {
-            Err(ConnectionManagerError::ConnectionNotFound)
+    ) -> Result<ConnectionPool, ConnectionManagerError> {
+        let database_pool = self
+            .pools
+            .get(&connection_name)
+            .ok_or(ConnectionManagerError::ConnectionNotFound)?;
+        match database_pool {
+            ConnectionPool::Postgres(pool) => {
+                let pool = pool.clone();
+                Ok(ConnectionPool::Postgres(pool))
+            }
         }
     }
 }

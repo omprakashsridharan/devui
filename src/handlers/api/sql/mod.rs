@@ -1,6 +1,6 @@
-pub mod postgres;
+pub mod tables;
 
-use crate::extractors::sql::SqlService;
+use crate::state::SqlServiceState;
 use axum::extract::State;
 use axum::response::Json;
 use http::StatusCode;
@@ -34,17 +34,15 @@ pub struct ColumnInfo {
     pub default_value: Option<String>,
 }
 
-pub async fn connections(State(sql_service_extractor): State<SqlService>) -> Result<Json<Vec<ConnectionResponseItem>>, StatusCode> {
+pub async fn connections(
+    State(SqlServiceState(sql_service)): State<SqlServiceState>,
+) -> Result<Json<Vec<ConnectionResponseItem>>, StatusCode> {
     let mut connections: Vec<ConnectionResponseItem> = Vec::new();
-    if let Some(sql_state) = sql_service_extractor.sql_state {
-        for (connection_name, _) in sql_state.config.postgres.clone() {
-            connections.push(ConnectionResponseItem {
-                name: connection_name,
-                database_type: DatabaseType::POSTGRES,
-            })
-        }
-        Ok(Json(connections))
-    } else {
-        Err(StatusCode::INTERNAL_SERVER_ERROR)
+    for (connection_name, connection_pool) in sql_service.get_connections() {
+        connections.push(ConnectionResponseItem {
+            name: connection_name,
+            database_type: connection_pool.into(),
+        })
     }
+    Ok(Json(connections))
 }

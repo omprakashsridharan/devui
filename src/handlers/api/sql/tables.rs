@@ -1,17 +1,15 @@
-use crate::extractors::postgres_pool::PostgresPool;
 use crate::handlers::api::sql::{ColumnInfo, TableInfo};
+use crate::state::SqlServiceState;
+use axum::extract::{Path, State};
 use axum::Json;
 use http::StatusCode;
 use sqlx::Row;
 use std::collections::HashMap;
 
 pub async fn tables(
-    PostgresPool {
-        connection_name,
-        pool,
-    }: PostgresPool,
+    State(SqlServiceState(sql_service)): State<SqlServiceState>,
+    Path(connection_name): Path<String>
 ) -> Result<Json<Vec<TableInfo>>, StatusCode> {
-    tracing::info!("fetching tables for connection {}", connection_name);
     let query = r#"
             SELECT
                 t.table_name,
