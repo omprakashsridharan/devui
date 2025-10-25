@@ -1,5 +1,5 @@
 use axum::{response::Html, routing::get, Router};
-use devui::{dev_ui_router, DevUIConfigBuilder, DevUIConfigBuilderError, PostgresConfig, SqlConfig};
+use devui::{dev_ui_router, DevUIConfigBuilder, PostgresConfig, SqlConfig};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 #[tokio::main]

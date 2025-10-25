@@ -1,12 +1,10 @@
-use crate::handlers::{dev_ui_services, spa::serve_spa, sql_connections, tables};
-use crate::services::sql::config::Config;
+use crate::handlers::{dev_ui_services, spa::serve_spa};
+use crate::services::sql::router::router;
 use crate::services::sql::service::{Service as SqlService, SqlServiceError};
-use crate::state::DevUIState;
+use crate::DevUIConfig;
 use axum::{routing::get, Router};
-use std::sync::Arc;
 use thiserror::Error;
 use tower_http::services::ServeDir;
-use crate::DevUIConfig;
 
 #[derive(Error, Debug)]
 pub enum DevUIError {
@@ -22,11 +20,6 @@ pub async fn dev_ui_router(dev_ui_config: DevUIConfig) -> Result<Router, DevUIEr
     Ok(Router::new()
         .nest_service("/assets", ServeDir::new("frontend/dist/assets"))
         .route("/api/services", get(dev_ui_services))
-        .route("/api/services/sql/connections", get(sql_connections))
-        .route(
-            "/api/services/sql/connections/{connection_name}/tables",
-            get(tables),
-        )
-        .with_state(Arc::new(DevUIState { sql_service }))
+        .nest("/api/services/sql", router(sql_service))
         .route("/{*path}", get(serve_spa)))
 }

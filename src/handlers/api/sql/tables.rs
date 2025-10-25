@@ -1,8 +1,8 @@
 use crate::services::sql::models::TableInfo;
-use crate::state::SqlServiceState;
 use axum::extract::{Path, State};
 use axum::Json;
 use http::StatusCode;
+use crate::services::sql::router::SqlServiceState;
 
 pub async fn tables(
     State(SqlServiceState(sql_service)): State<SqlServiceState>,

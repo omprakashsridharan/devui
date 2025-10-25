@@ -4,5 +4,6 @@ pub mod config;
 pub mod connection_pool;
 mod postgres;
 pub mod models;
+pub mod router;
 
 

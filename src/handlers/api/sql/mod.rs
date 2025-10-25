@@ -1,6 +1,6 @@
 pub mod tables;
 
-use crate::state::SqlServiceState;
+use crate::services::sql::router::SqlServiceState;
 use axum::extract::State;
 use axum::response::Json;
 use http::StatusCode;
