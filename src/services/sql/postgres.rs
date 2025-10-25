@@ -2,7 +2,7 @@ use crate::handlers::api::sql::DatabaseType;
 use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
 use crate::services::sql::models::{ColumnInfo, TableInfo, TableRow};
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgPoolOptions, PgTypeKind};
 use sqlx::types::chrono::{DateTime, Utc};
 use sqlx::types::Json;
 use sqlx::{Column, Pool, Postgres, Row, TypeInfo};
@@ -125,7 +125,36 @@ impl ConnectionPool for PostgresConnectionPool {
     }
 
     async fn table_data(&self, table_name: String) -> Result<Vec<TableRow>, ConnectionPoolError> {
-        let query = format!("SELECT * FROM {table_name} limit 10");
+        let column_query = format!(
+            r#"
+            SELECT column_name, data_type, udt_name
+            FROM information_schema.columns
+            WHERE table_name = '{}'
+            "#,
+            table_name
+        );
+
+        let columns_info = sqlx::query(&column_query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(ConnectionPoolError::SqlxError)?;
+
+        // Build a query that casts enums to text
+        let mut select_parts = Vec::new();
+        for row in columns_info {
+            let column_name: String = row.get("column_name");
+            let data_type: String = row.get("data_type");
+            let udt_name: String = row.get("udt_name");
+
+            if data_type == "USER-DEFINED" && udt_name.ends_with("_enum") {
+                // Cast enum to text
+                select_parts.push(format!("{}::text as {}", column_name, column_name));
+            } else {
+                select_parts.push(column_name);
+            }
+        }
+
+        let query = format!("SELECT {} FROM {} LIMIT 10", select_parts.join(", "), table_name);
         match sqlx::query(&query).fetch_all(&self.pool).await {
             Ok(rows) => {
                 let mut table_data: Vec<TableRow> = Vec::new();
@@ -136,19 +165,21 @@ impl ConnectionPool for PostgresConnectionPool {
                     for column in columns {
                         let type_info = column.type_info();
                         columns_info.insert(column.name().to_string());
-
                         match type_info.name() {
                             "INT4" => {
                                 let value: i32 = row.get(column.name());
-                                table_row_data.insert(column.name().to_string(), value.to_string());
+                                table_row_data
+                                    .insert(column.name().to_string(), value.to_string());
                             }
                             "TIMESTAMPTZ" => {
                                 let value: DateTime<Utc> = row.get(column.name());
-                                table_row_data.insert(column.name().to_string(), value.to_string());
+                                table_row_data
+                                    .insert(column.name().to_string(), value.to_string());
                             }
                             "JSONB" => {
                                 let value: Json<serde_json::Value> = row.get(column.name());
-                                table_row_data.insert(column.name().to_string(), value.to_string());
+                                table_row_data
+                                    .insert(column.name().to_string(), value.to_string());
                             }
                             _ => {
                                 let value: Option<String> = row.get(column.name());

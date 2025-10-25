@@ -147,6 +147,38 @@ export class SqlService {
   }
 
   /**
+   * Get table data for a specific table
+   */
+  async getTableData(connectionId: string, tableName: string): Promise<{
+    columns: string[];
+    data: Record<string, unknown>[];
+  }> {
+    try {
+      const response = await api.get<Array<{
+        columns: string[];
+        data: Record<string, unknown>;
+      }>>(`/services/sql/connections/${connectionId}/tables/${tableName}`);
+
+      // Transform the response to match expected format
+      if (response.length > 0) {
+        const firstItem = response[0];
+        return {
+          columns: firstItem.columns,
+          data: response.map(item => item.data),
+        };
+      }
+
+      return { columns: [], data: [] };
+    } catch (error) {
+      if (error instanceof ApiError) {
+        console.error('Failed to fetch table data:', error.message);
+        throw new Error(`Failed to fetch table data: ${error.message}`);
+      }
+      throw new Error('Failed to fetch table data');
+    }
+  }
+
+  /**
    * Get database schema for a connection (legacy method for compatibility)
    */
   async getSchema(connectionId: string): Promise<{

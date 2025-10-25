@@ -67,9 +67,11 @@ const Layout: React.FC = () => {
         justifyContent: drawerOpen ? 'space-between' : 'center',
         minHeight: 48,
         px: drawerOpen ? 2 : 0,
+        backgroundColor: 'primary.main',
+        color: 'primary.contrastText',
       }}>
         {drawerOpen && (
-          <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold' }}>
+          <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold', color: 'primary.contrastText' }}>
             DevUI
           </Typography>
         )}
@@ -81,6 +83,10 @@ const Layout: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            color: 'primary.contrastText',
+            '&:hover': {
+              backgroundColor: 'primary.dark',
+            },
           }}
         >
           {drawerOpen ? <ChevronLeftIcon /> : <MenuIcon />}
@@ -96,11 +102,15 @@ const Layout: React.FC = () => {
                 minHeight: 48,
                 justifyContent: drawerOpen ? 'initial' : 'center',
                 px: drawerOpen ? 2.5 : 1,
+                mx: 1,
+                borderRadius: 1,
                 '&.Mui-selected': {
                   backgroundColor: 'primary.main',
                   color: 'primary.contrastText',
+                  boxShadow: 1,
                   '&:hover': {
                     backgroundColor: 'primary.dark',
+                    boxShadow: 2,
                   },
                   '& .MuiListItemIcon-root': {
                     color: 'primary.contrastText',
@@ -108,6 +118,7 @@ const Layout: React.FC = () => {
                 },
                 '&:hover': {
                   backgroundColor: 'action.hover',
+                  boxShadow: 1,
                 },
               }}
             >
@@ -139,6 +150,8 @@ const Layout: React.FC = () => {
         sx={{
           width: `calc(100% - ${currentDrawerWidth}px)`,
           ml: `${currentDrawerWidth}px`,
+          border: 'none',
+          boxShadow: 'none',
           transition: (theme) =>
             theme.transitions.create(['width', 'margin'], {
               easing: theme.transitions.easing.sharp,
@@ -161,6 +174,14 @@ const Layout: React.FC = () => {
           '& .MuiDrawer-paper': {
             width: currentDrawerWidth,
             boxSizing: 'border-box',
+            backgroundColor: 'grey.50',
+            border: 'none',
+            borderRight: 'none',
+            borderLeft: 'none',
+            borderTop: 'none',
+            borderBottom: 'none',
+            margin: 0,
+            padding: 0,
             transition: (theme) =>
               theme.transitions.create('width', {
                 easing: theme.transitions.easing.sharp,
@@ -180,6 +201,7 @@ const Layout: React.FC = () => {
           p: 3,
           width: `calc(100% - ${currentDrawerWidth}px)`,
           mt: '64px', // Height of AppBar
+          border: 'none',
           transition: (theme) =>
             theme.transitions.create(['width', 'margin'], {
               easing: theme.transitions.easing.sharp,

@@ -31,9 +31,9 @@ import {
   Refresh as RefreshIcon,
   CheckCircle as ConnectedIcon,
   Error as ErrorIcon,
-  Warning as WarningIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
+  Visibility as ShowDataIcon,
 } from '@mui/icons-material';
 import { sqlService, type SqlConnection } from '../services/sqlService';
 
@@ -68,6 +68,11 @@ const SqlEditor = () => {
   const [executing, setExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
+  const [tableData, setTableData] = useState<{
+    columns: string[];
+    data: Record<string, unknown>[];
+  } | null>(null);
+  const [loadingTableData, setLoadingTableData] = useState(false);
 
   const loadConnections = async () => {
     try {
@@ -154,20 +159,11 @@ const SqlEditor = () => {
       case 'error':
         return <ErrorIcon color="error" />;
       default:
-        return <WarningIcon color="warning" />;
+        // For database connections without explicit status, show a neutral icon
+        return <TableIcon color="action" />;
     }
   };
 
-  const getStatusColor = (status?: string) => {
-    switch (status) {
-      case 'connected':
-        return 'success';
-      case 'error':
-        return 'error';
-      default:
-        return 'warning';
-    }
-  };
 
   // Generate a unique ID for connections that don't have one
   const getConnectionId = (connection: SqlConnection) => {
@@ -185,6 +181,24 @@ const SqlEditor = () => {
       }
       return newSet;
     });
+  };
+
+  // Load table data
+  const loadTableData = async (tableName: string) => {
+    if (!selectedConnection) return;
+
+    try {
+      setLoadingTableData(true);
+      setError(null);
+      const connectionId = getConnectionId(selectedConnection);
+      const data = await sqlService.getTableData(connectionId, tableName);
+      setTableData(data);
+    } catch (error) {
+      console.error('Failed to load table data:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load table data');
+    } finally {
+      setLoadingTableData(false);
+    }
   };
 
   if (connectionsLoading) {
@@ -235,8 +249,8 @@ const SqlEditor = () => {
                   {getStatusIcon(connection.status)}
                   <Typography variant="body2">{connection.name}</Typography>
                   <Chip
-                    label={connection.status || 'unknown'}
-                    color={getStatusColor(connection.status) as 'success' | 'error' | 'warning'}
+                    label={connection.database_type || 'unknown'}
+                    color="primary"
                     size="small"
                   />
                 </Box>
@@ -252,7 +266,7 @@ const SqlEditor = () => {
           <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Typography variant="h6">
-                Database Tables ({tables.length})
+            Database Tables ({tables.length})
               </Typography>
               <Tooltip title="Refresh">
                 <IconButton size="small" onClick={loadTables}>
@@ -304,9 +318,29 @@ const SqlEditor = () => {
                           primary={table.name}
                           secondary={`Schema: ${table.schema} • ${table.columns.length} columns`}
                         />
-                        <IconButton size="small">
-                          {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                        </IconButton>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Tooltip title="Show Table Data">
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                loadTableData(table.name);
+                              }}
+                              sx={{
+                                color: 'primary.main',
+                                '&:hover': {
+                                  backgroundColor: 'primary.light',
+                                  color: 'primary.contrastText'
+                                }
+                              }}
+                            >
+                              <ShowDataIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <IconButton size="small">
+                            {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                          </IconButton>
+                        </Box>
                       </ListItemButton>
 
                       {isExpanded && (
@@ -350,6 +384,106 @@ const SqlEditor = () => {
 
         {/* Main Content */}
         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', m: 2 }}>
+          {/* Table Data Display */}
+          {tableData && (
+            <Paper sx={{ mb: 2, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+              <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+                <Typography variant="h6">Table Data</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {tableData.data.length} rows • {tableData.columns.length} columns
+                </Typography>
+              </Box>
+
+              <Box sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
+                {loadingTableData ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
+                    <CircularProgress />
+                    <Typography variant="body2" sx={{ ml: 2 }}>
+                      Loading table data...
+                    </Typography>
+                  </Box>
+                ) : (
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow sx={{ backgroundColor: 'primary.main' }}>
+                          {tableData.columns.map((column, index) => (
+                            <TableCell
+                              key={index}
+                              sx={{
+                                fontWeight: 'bold',
+                                color: 'primary.contrastText',
+                                borderBottom: '2px solid',
+                                borderColor: 'primary.dark',
+                              }}
+                            >
+                              {column}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {tableData.data.map((row, index) => (
+                          <TableRow
+                            key={index}
+                            sx={{
+                              '&:nth-of-type(odd)': {
+                                backgroundColor: 'action.hover',
+                              },
+                              '&:hover': {
+                                backgroundColor: 'action.selected',
+                              },
+                            }}
+                          >
+                            {tableData.columns.map((column, colIndex) => (
+                              <TableCell
+                                key={colIndex}
+                                sx={{
+                                  borderBottom: '1px solid',
+                                  borderColor: 'divider',
+                                }}
+                              >
+                                {(() => {
+                                  const value = row[column];
+                                  if (value === null || value === undefined || value === '') {
+                                    return (
+                                      <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                        sx={{ fontStyle: 'italic' }}
+                                      >
+                                        null
+                                      </Typography>
+                                    );
+                                  }
+
+                                  const stringValue = String(value);
+                                  if (stringValue.length > 100) {
+                                    return (
+                                      <Typography variant="body2">
+                                        {stringValue.substring(0, 100)}...
+                                      </Typography>
+                                    );
+                                  }
+
+                                  return (
+                                    <Typography variant="body2">
+                                      {stringValue}
+                                    </Typography>
+                                  );
+                                })()}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )}
+              </Box>
+            </Paper>
+          )}
+
           {/* Query Editor */}
           <Paper sx={{ mb: 2, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
             <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
@@ -357,17 +491,17 @@ const SqlEditor = () => {
                 <Button
                   variant="contained"
                   startIcon={executing ? <CircularProgress size={16} /> : <PlayIcon />}
-                  onClick={executeQuery}
+                onClick={executeQuery}
                   disabled={executing || !query.trim() || !selectedConnection}
-                >
-                  {executing ? 'Executing...' : 'Execute Query'}
+              >
+                {executing ? 'Executing...' : 'Execute Query'}
                 </Button>
                 <Button
                   variant="outlined"
                   startIcon={<ClearIcon />}
                   onClick={clearQuery}
                 >
-                  Clear
+                Clear
                 </Button>
               </Box>
             </Box>
@@ -378,9 +512,9 @@ const SqlEditor = () => {
                 multiline
                 rows={8}
                 variant="outlined"
-                placeholder="Enter your SQL query here...\n\nExample:\nSELECT * FROM users LIMIT 10;"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+              placeholder="Enter your SQL query here...\n\nExample:\nSELECT * FROM users LIMIT 10;"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
                 sx={{
                   '& .MuiInputBase-root': {
                     fontFamily: 'monospace',
