@@ -1,8 +1,7 @@
 use crate::handlers::api::sql::DatabaseType;
 use crate::services::sql::config::{Config, DatabaseConfig};
-use crate::services::sql::connection_pool::{
-    ConnectionPool, ConnectionPoolFactory, PostgresConnectionPoolFactory,
-};
+use crate::services::sql::connection_pool::ConnectionPool;
+use crate::services::sql::postgres::PostgresConnectionPool;
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -24,13 +23,9 @@ impl ConnectionManager {
 
         for (connection_name, database_config) in sql_config.database_configs {
             let connection_pool = match database_config {
-                DatabaseConfig::Postgres(_) => {
-                    PostgresConnectionPoolFactory::create_pool(database_config)
-                        .await
-                        .map_err(|e| {
-                            ConnectionManagerError::ConnectionCreationError(e.to_string())
-                        })?
-                }
+                DatabaseConfig::Postgres(_) => PostgresConnectionPool::create_pool(database_config)
+                    .await
+                    .map_err(|e| ConnectionManagerError::ConnectionCreationError(e.to_string()))?,
             };
 
             pools.insert(connection_name.to_string(), connection_pool);

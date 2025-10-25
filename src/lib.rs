@@ -1,4 +1,3 @@
-mod extractors;
 mod handlers;
 mod router;
 mod services;
