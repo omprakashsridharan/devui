@@ -1,5 +1,6 @@
 use crate::handlers::{dev_ui_services, spa::serve_spa};
-use crate::services::sql::router::router;
+use crate::services::kafka::router::router as kafka_router;
+use crate::services::sql::router::router as sql_router;
 use crate::services::sql::service::{Service as SqlService, SqlServiceError};
 use crate::DevUIConfig;
 use axum::{routing::get, Router};
@@ -20,6 +21,7 @@ pub async fn dev_ui_router(dev_ui_config: DevUIConfig) -> Result<Router, DevUIEr
     Ok(Router::new()
         .nest_service("/assets", ServeDir::new("frontend/dist/assets"))
         .route("/api/services", get(dev_ui_services))
-        .nest("/api/services/sql", router(sql_service))
+        .nest("/api/services/sql", sql_router(sql_service))
+        .nest("/api/services/kafka", kafka_router())
         .route("/{*path}", get(serve_spa)))
 }

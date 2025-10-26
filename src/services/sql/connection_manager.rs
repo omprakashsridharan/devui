@@ -1,4 +1,4 @@
-use crate::handlers::api::sql::DatabaseType;
+use crate::handlers::sql::DatabaseType;
 use crate::services::sql::config::{Config, DatabaseConfig};
 use crate::services::sql::connection_pool::ConnectionPool;
 use crate::services::sql::postgres::PostgresConnectionPool;

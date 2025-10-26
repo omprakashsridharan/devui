@@ -1,4 +1,4 @@
-use crate::handlers::api::sql::DatabaseType;
+use crate::handlers::sql::DatabaseType;
 pub(crate) use crate::services::sql::connection_manager::{
     ConnectionManager, ConnectionManagerError,
 };

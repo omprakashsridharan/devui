@@ -1,4 +1,4 @@
-use crate::handlers::api::sql::DatabaseType;
+use crate::handlers::sql::DatabaseType;
 use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
 use crate::services::sql::field_decoder::FieldDecoder;

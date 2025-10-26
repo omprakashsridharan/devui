@@ -1,11 +1,11 @@
-pub mod api;
 pub mod spa;
+pub mod sql;
 
-pub use api::sql::connections as sql_connections;
-pub use api::sql::table_data::table_data;
-pub use api::sql::tables::tables;
 use axum::Json;
 use serde::Serialize;
+pub use sql::connections as sql_connections;
+pub use sql::table_data::table_data;
+pub use sql::tables::tables;
 // pub use spa::*;
 
 #[derive(Serialize)]

@@ -1,4 +1,4 @@
-use crate::handlers::api::sql::DatabaseType;
+use crate::handlers::sql::DatabaseType;
 use crate::services::sql::models::{TableInfo, TableRow};
 use std::collections::HashMap;
 use thiserror::Error;
