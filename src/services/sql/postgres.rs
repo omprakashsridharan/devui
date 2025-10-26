@@ -2,6 +2,7 @@ use crate::handlers::api::sql::DatabaseType;
 use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
 use crate::services::sql::models::{ColumnInfo, TableInfo, TableRow};
+use hex;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::chrono::{DateTime, Utc};
 use sqlx::types::{chrono, Json};
@@ -243,6 +244,24 @@ impl ConnectionPool for PostgresConnectionPool {
                             "INT4" => {
                                 let value: i32 = row.get(column.name());
                                 table_row_data.insert(column.name().to_string(), value.to_string());
+                            }
+                            "INT8" => {
+                                let value: i64 = row.get(column.name());
+                                table_row_data.insert(column.name().to_string(), value.to_string());
+                            }
+                            "NUMERIC" => {
+                                let value: String = row.get(column.name());
+                                table_row_data.insert(column.name().to_string(), value);
+                            }
+                            "BOOL" | "BOOLEAN" => {
+                                let value: bool = row.get(column.name());
+                                table_row_data.insert(column.name().to_string(), value.to_string());
+                            }
+                            "BYTEA" => {
+                                let value: Vec<u8> = row.get(column.name());
+                                // Convert bytes to hex string representation
+                                let hex_string = format!("\\x{}", hex::encode(&value));
+                                table_row_data.insert(column.name().to_string(), hex_string);
                             }
                             "TIMESTAMPTZ" => {
                                 let value: DateTime<Utc> = row.get(column.name());

@@ -703,6 +703,7 @@ dependencies = [
  "cargo-watch",
  "derive_builder 0.20.2",
  "futures",
+ "hex",
  "http",
  "http-body",
  "pin-project",
