@@ -3,7 +3,7 @@ use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
 use crate::services::sql::models::{ColumnInfo, TableInfo, TableRow};
 use sqlx::postgres::PgPoolOptions;
-use sqlx::types::chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use sqlx::types::chrono::{DateTime, Utc};
 use sqlx::types::{chrono, Json};
 use sqlx::{Column, Pool, Postgres, Row, TypeInfo};
 use std::collections::{HashMap, HashSet};
