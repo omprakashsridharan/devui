@@ -3,8 +3,8 @@ use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
 use crate::services::sql::models::{ColumnInfo, TableInfo, TableRow};
 use sqlx::postgres::PgPoolOptions;
-use sqlx::types::chrono::{DateTime, Utc};
-use sqlx::types::Json;
+use sqlx::types::chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use sqlx::types::{chrono, Json};
 use sqlx::{Column, Pool, Postgres, Row, TypeInfo};
 use std::collections::{HashMap, HashSet};
 
@@ -124,13 +124,17 @@ impl ConnectionPool for PostgresConnectionPool {
         }
     }
 
-    async fn table_data(&self, table_name: String) -> Result<Vec<TableRow>, ConnectionPoolError> {
+    async fn table_data(
+        &self,
+        table_name: String,
+        filters: Option<HashMap<String, String>>,
+    ) -> Result<Vec<TableRow>, ConnectionPoolError> {
         let column_query = format!(
             r#"
-            SELECT column_name, data_type, udt_name
-            FROM information_schema.columns
-            WHERE table_name = '{}'
-            "#,
+        SELECT column_name, data_type, udt_name, is_nullable
+        FROM information_schema.columns
+        WHERE table_name = '{}'
+        "#,
             table_name
         );
 
@@ -139,26 +143,92 @@ impl ConnectionPool for PostgresConnectionPool {
             .await
             .map_err(ConnectionPoolError::SqlxError)?;
 
-        // Build a query that casts enums to text
+        // Build a query that casts enums to text and handles filters
         let mut select_parts = Vec::new();
+        let mut where_clauses = Vec::new();
+
         for row in columns_info {
             let column_name: String = row.get("column_name");
             let data_type: String = row.get("data_type");
-            let udt_name: String = row.get("udt_name");
 
-            if data_type == "USER-DEFINED" && udt_name.ends_with("_enum") {
-                // Cast enum to text
+            // Handle enum casting for SELECT
+            if data_type == "USER-DEFINED" {
                 select_parts.push(format!("{}::text as {}", column_name, column_name));
             } else {
-                select_parts.push(column_name);
+                select_parts.push(column_name.clone());
+            }
+
+            // Handle filters based on column type
+            if let Some(ref filters) = filters {
+                if let Some(filter_value) = filters.get(&column_name) {
+                    if !filter_value.is_empty() {
+                        let escaped_value = filter_value.replace("'", "''"); // Basic SQL injection prevention
+
+                        let where_clause = match data_type.as_str() {
+                            // Numeric types
+                            "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real"
+                            | "double precision" => {
+                                if let Ok(_) = filter_value.parse::<f64>() {
+                                    format!("{} = '{}'", column_name, escaped_value)
+                                } else {
+                                    format!("{}::text ILIKE '%{}%'", column_name, escaped_value)
+                                }
+                            }
+                            // Date/time types
+                            "timestamp" | "timestamptz" | "date" | "time" => {
+                                format!("{}::text ILIKE '%{}%'", column_name, escaped_value)
+                            }
+                            // Boolean
+                            "boolean" => {
+                                if filter_value.to_lowercase() == "true" || filter_value == "1" {
+                                    format!("{} = true", column_name)
+                                } else if filter_value.to_lowercase() == "false"
+                                    || filter_value == "0"
+                                {
+                                    format!("{} = false", column_name)
+                                } else {
+                                    format!("{}::text ILIKE '%{}%'", column_name, escaped_value)
+                                }
+                            }
+                            // JSON types
+                            "json" | "jsonb" => {
+                                format!("{}::text ILIKE '%{}%'", column_name, escaped_value)
+                            }
+                            // UUID
+                            "uuid" => {
+                                format!("{}::text ILIKE '%{}%'", column_name, escaped_value)
+                            }
+                            // Arrays
+                            "ARRAY" => {
+                                format!("{}::text ILIKE '%{}%'", column_name, escaped_value)
+                            }
+                            // Enums and other user-defined types
+                            "USER-DEFINED" => {
+                                format!("{}::text ILIKE '%{}%'", column_name, escaped_value)
+                            }
+                            // Text types (default)
+                            _ => {
+                                format!("{} ILIKE '%{}%'", column_name, escaped_value)
+                            }
+                        };
+
+                        where_clauses.push(where_clause);
+                    }
+                }
             }
         }
 
-        let query = format!(
-            "SELECT {} FROM {} LIMIT 10",
-            select_parts.join(", "),
-            table_name
-        );
+        // Build the final query
+        let mut query = format!("SELECT {} FROM {}", select_parts.join(", "), table_name);
+
+        if !where_clauses.is_empty() {
+            query.push_str(&format!(" WHERE {}", where_clauses.join(" AND ")));
+        }
+
+        query.push_str(" LIMIT 10"); // Increased limit for filtered results
+
+        tracing::debug!("SQL query: {}", query);
+
         match sqlx::query(&query).fetch_all(&self.pool).await {
             Ok(rows) => {
                 let mut table_data: Vec<TableRow> = Vec::new();
@@ -169,7 +239,7 @@ impl ConnectionPool for PostgresConnectionPool {
                     for column in columns {
                         let type_info = column.type_info();
                         columns_info.insert(column.name().to_string());
-                        match type_info.name() {
+                        match type_info.name().to_ascii_uppercase().as_str() {
                             "INT4" => {
                                 let value: i32 = row.get(column.name());
                                 table_row_data.insert(column.name().to_string(), value.to_string());
@@ -178,17 +248,61 @@ impl ConnectionPool for PostgresConnectionPool {
                                 let value: DateTime<Utc> = row.get(column.name());
                                 table_row_data.insert(column.name().to_string(), value.to_string());
                             }
+                            "TIMESTAMP" => {
+                                let value: chrono::NaiveDateTime = row.get(column.name());
+                                table_row_data.insert(column.name().to_string(), value.to_string());
+                            }
+                            "DATE" => {
+                                let value: chrono::NaiveDate = row.get(column.name());
+                                table_row_data.insert(column.name().to_string(), value.to_string());
+                            }
+                            "TIME" => {
+                                let value: chrono::NaiveTime = row.get(column.name());
+                                table_row_data.insert(column.name().to_string(), value.to_string());
+                            }
                             "JSONB" => {
                                 let value: Json<serde_json::Value> = row.get(column.name());
                                 table_row_data.insert(column.name().to_string(), value.to_string());
                             }
-                            _ => {
+                            "TEXT" | "VARCHAR" | "CHAR" => {
                                 let value: Option<String> = row.get(column.name());
                                 if let Some(value) = value {
                                     table_row_data.insert(column.name().to_string(), value);
                                 } else {
                                     table_row_data
                                         .insert(column.name().to_string(), "".to_string());
+                                }
+                            }
+                            unknown => {
+                                // For custom types that were cast to text, try to get as text
+                                // Even though SQLx reports the original type name, the actual data is text
+                                match row.try_get::<Option<String>, _>(column.name()) {
+                                    Ok(value) => {
+                                        if let Some(value) = value {
+                                            table_row_data.insert(column.name().to_string(), value);
+                                        } else {
+                                            table_row_data
+                                                .insert(column.name().to_string(), "".to_string());
+                                        }
+                                    }
+                                    Err(_) => {
+                                        // If that fails, try to get as a generic string representation
+                                        match row.try_get::<String, _>(column.name()) {
+                                            Ok(value) => {
+                                                table_row_data
+                                                    .insert(column.name().to_string(), value);
+                                            }
+                                            Err(_) => {
+                                                // Last resort: convert to string representation
+                                                tracing::warn!("Failed to decode column {} of type {} as text, using placeholder",
+                                                    column.name(), unknown);
+                                                table_row_data.insert(
+                                                    column.name().to_string(),
+                                                    "[UNKNOWN TYPE]".to_string(),
+                                                );
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

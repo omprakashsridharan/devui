@@ -23,9 +23,9 @@ import {
   TableRow,
   IconButton,
   Tooltip,
+  InputAdornment,
 } from '@mui/material';
 import {
-  PlayArrow as PlayIcon,
   Clear as ClearIcon,
   TableChart as TableIcon,
   Refresh as RefreshIcon,
@@ -34,6 +34,7 @@ import {
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
   Visibility as ShowDataIcon,
+  Search as SearchIcon,
 } from '@mui/icons-material';
 import { sqlService, type SqlConnection } from '../services/sqlService';
 
@@ -49,13 +50,6 @@ interface Table {
   }>;
 }
 
-interface QueryResult {
-  success: boolean;
-  data?: Record<string, unknown>[];
-  columns?: string[];
-  message?: string;
-  executionTime?: number;
-}
 
 const SqlEditor = () => {
   const [connections, setConnections] = useState<SqlConnection[]>([]);
@@ -63,16 +57,15 @@ const SqlEditor = () => {
   const [tables, setTables] = useState<Table[]>([]);
   const [loading, setLoading] = useState(true);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<QueryResult | null>(null);
-  const [executing, setExecuting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
   const [tableData, setTableData] = useState<{
     columns: string[];
     data: Record<string, unknown>[];
   } | null>(null);
   const [loadingTableData, setLoadingTableData] = useState(false);
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [currentTableName, setCurrentTableName] = useState<string | null>(null);
+  const [tableDataError, setTableDataError] = useState<string | null>(null);
 
   const loadConnections = async () => {
     try {
@@ -86,7 +79,6 @@ const SqlEditor = () => {
       }
     } catch (error) {
       console.error('Failed to load connections:', error);
-      setError('Failed to load SQL connections');
     } finally {
       setConnectionsLoading(false);
     }
@@ -102,7 +94,6 @@ const SqlEditor = () => {
       setTables(tablesData);
     } catch (error) {
       console.error('Failed to load tables:', error);
-      setError('Failed to load database tables');
     } finally {
       setLoading(false);
     }
@@ -118,38 +109,8 @@ const SqlEditor = () => {
     }
   }, [selectedConnection, loadTables]);
 
-  const executeQuery = async () => {
-    if (!query.trim() || !selectedConnection) return;
-
-    setExecuting(true);
-    setError(null);
-    try {
-      const connectionId = getConnectionId(selectedConnection);
-      const result = await sqlService.executeQuery(connectionId, query);
-      setResults(result);
-    } catch (error) {
-      console.error('Failed to execute query:', error);
-      setError(error instanceof Error ? error.message : 'Failed to execute query');
-      setResults({
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to execute query',
-      });
-    } finally {
-      setExecuting(false);
-    }
-  };
-
-  const clearQuery = () => {
-    setQuery('');
-    setResults(null);
-    setError(null);
-  };
-
   const handleConnectionChange = (connection: SqlConnection) => {
     setSelectedConnection(connection);
-    setQuery('');
-    setResults(null);
-    setError(null);
   };
 
   const getStatusIcon = (status?: string) => {
@@ -184,21 +145,49 @@ const SqlEditor = () => {
   };
 
   // Load table data
-  const loadTableData = async (tableName: string) => {
+  const loadTableData = async (tableName: string, appliedFilters?: Record<string, string>) => {
     if (!selectedConnection) return;
 
     try {
       setLoadingTableData(true);
-      setError(null);
+      setTableDataError(null); // Clear any previous errors
+      setTableData(null); // Clear previous data immediately
+      setCurrentTableName(tableName);
+
       const connectionId = getConnectionId(selectedConnection);
-      const data = await sqlService.getTableData(connectionId, tableName);
+      const data = await sqlService.getTableData(connectionId, tableName, appliedFilters || filters);
       setTableData(data);
     } catch (error) {
       console.error('Failed to load table data:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load table data');
+      setTableData(null); // Clear data on error
+      setTableDataError(error instanceof Error ? error.message : 'Failed to load table data');
     } finally {
       setLoadingTableData(false);
     }
+  };
+
+  // Apply filters
+  const applyFilters = () => {
+    if (currentTableName) {
+      loadTableData(currentTableName, filters);
+    }
+  };
+
+  // Clear filters
+  const clearFilters = () => {
+    setFilters({});
+    setTableDataError(null); // Clear any errors when clearing filters
+    if (currentTableName) {
+      loadTableData(currentTableName, {});
+    }
+  };
+
+  // Update filter for a specific column
+  const updateFilter = (column: string, value: string) => {
+    setFilters(prev => ({
+      ...prev,
+      [column]: value,
+    }));
   };
 
   if (connectionsLoading) {
@@ -383,18 +372,49 @@ const SqlEditor = () => {
         </Paper>
 
         {/* Main Content */}
-        <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', m: 2 }}>
+        <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', m: 2, overflow: 'hidden' }}>
           {/* Table Data Display */}
-          {tableData && (
-            <Paper sx={{ mb: 2, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-              <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-                <Typography variant="h6">Table Data</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {tableData.data.length} rows • {tableData.columns.length} columns
-                </Typography>
+          {(tableData || tableDataError || loadingTableData) && (
+            <Paper sx={{ mb: 2, flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box>
+                    <Typography variant="h6">Table Data</Typography>
+                    {tableData && !tableDataError && (
+                      <Typography variant="body2" color="text.secondary">
+                        {tableData.data.length} rows • {tableData.columns.length} columns
+                      </Typography>
+                    )}
+                    {tableDataError && (
+                      <Typography variant="body2" color="error">
+                        Error loading table data
+                      </Typography>
+                    )}
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      variant="contained"
+                      startIcon={<SearchIcon />}
+                      onClick={applyFilters}
+                      disabled={loadingTableData || !currentTableName}
+                      size="small"
+                    >
+                      Apply Filters
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      startIcon={<ClearIcon />}
+                      onClick={clearFilters}
+                      disabled={loadingTableData || Object.keys(filters).length === 0}
+                      size="small"
+                    >
+                      Clear All
+                    </Button>
+                  </Box>
+                </Box>
               </Box>
 
-              <Box sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
+              <Box sx={{ flexGrow: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 {loadingTableData ? (
                   <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
                     <CircularProgress />
@@ -402,180 +422,160 @@ const SqlEditor = () => {
                       Loading table data...
                     </Typography>
                   </Box>
-                ) : (
-                  <TableContainer>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow sx={{ backgroundColor: 'primary.main' }}>
-                          {tableData.columns.map((column, index) => (
-                            <TableCell
-                              key={index}
-                              sx={{
-                                fontWeight: 'bold',
-                                color: 'primary.contrastText',
-                                borderBottom: '2px solid',
-                                borderColor: 'primary.dark',
-                              }}
-                            >
-                              {column}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {tableData.data.map((row, index) => (
-                          <TableRow
-                            key={index}
-                            sx={{
-                              '&:nth-of-type(odd)': {
-                                backgroundColor: 'action.hover',
-                              },
-                              '&:hover': {
-                                backgroundColor: 'action.selected',
-                              },
-                            }}
-                          >
-                            {tableData.columns.map((column, colIndex) => (
+                ) : tableDataError ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200, p: 2 }}>
+                    <Alert severity="error" sx={{ width: '100%' }}>
+                      <Typography variant="body1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                        Failed to load table data
+                      </Typography>
+                      <Typography variant="body2">
+                        {tableDataError}
+                      </Typography>
+                    </Alert>
+                  </Box>
+                ) : tableData ? (
+                  <Box sx={{
+                    flexGrow: 1,
+                    overflow: 'auto',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                    backgroundColor: 'background.paper'
+                  }}>
+                    <TableContainer sx={{
+                      minWidth: `${Math.max(tableData.columns.length * 200, 800)}px`,
+                      width: 'max-content'
+                    }}>
+                      <Table size="small" sx={{ minWidth: '100%' }}>
+                        <TableHead>
+                          <TableRow>
+                            {tableData.columns.map((column, index) => (
                               <TableCell
-                                key={colIndex}
+                                key={index}
                                 sx={{
-                                  borderBottom: '1px solid',
-                                  borderColor: 'divider',
+                                  fontWeight: 'bold',
+                                  backgroundColor: 'primary.main',
+                                  color: 'primary.contrastText',
+                                  borderBottom: '2px solid',
+                                  borderColor: 'primary.dark',
+                                  minWidth: 200,
+                                  width: 200,
+                                  whiteSpace: 'nowrap',
                                 }}
                               >
-                                {(() => {
-                                  const value = row[column];
-                                  if (value === null || value === undefined || value === '') {
-                                    return (
-                                      <Typography
-                                        variant="body2"
-                                        color="text.secondary"
-                                        sx={{ fontStyle: 'italic' }}
-                                      >
-                                        null
-                                      </Typography>
-                                    );
-                                  }
-
-                                  const stringValue = String(value);
-                                  if (stringValue.length > 100) {
-                                    return (
-                                      <Typography variant="body2">
-                                        {stringValue.substring(0, 100)}...
-                                      </Typography>
-                                    );
-                                  }
-
-                                  return (
-                                    <Typography variant="body2">
-                                      {stringValue}
-                                    </Typography>
-                                  );
-                                })()}
+                                {column}
                               </TableCell>
                             ))}
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                )}
+                          <TableRow>
+                            {tableData.columns.map((column, index) => (
+                              <TableCell
+                                key={`filter-${index}`}
+                                sx={{
+                                  padding: 1,
+                                  backgroundColor: 'grey.100',
+                                  borderBottom: '1px solid',
+                                  borderColor: 'divider',
+                                  minWidth: 200,
+                                  width: 200,
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  placeholder={`Filter ${column}`}
+                                  value={filters[column] || ''}
+                                  onChange={(e) => updateFilter(column, e.target.value)}
+                                  InputProps={{
+                                    startAdornment: (
+                                      <InputAdornment position="start">
+                                        <SearchIcon fontSize="small" />
+                                      </InputAdornment>
+                                    ),
+                                  }}
+                                  sx={{
+                                    '& .MuiOutlinedInput-root': {
+                                      fontSize: '0.75rem',
+                                      height: '32px',
+                                    },
+                                    '& .MuiInputBase-input': {
+                                      padding: '6px 8px',
+                                    },
+                                  }}
+                                />
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {tableData.data.map((row, index) => (
+                            <TableRow
+                              key={index}
+                              sx={{
+                                '&:nth-of-type(odd)': {
+                                  backgroundColor: 'action.hover',
+                                },
+                                '&:hover': {
+                                  backgroundColor: 'action.selected',
+                                },
+                              }}
+                            >
+                              {tableData.columns.map((column, colIndex) => (
+                                <TableCell
+                                  key={colIndex}
+                                  sx={{
+                                    borderBottom: '1px solid',
+                                    borderColor: 'divider',
+                                    minWidth: 200,
+                                    width: 200,
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                  }}
+                                >
+                                  {(() => {
+                                    const value = row[column];
+                                    if (value === null || value === undefined || value === '') {
+                                      return (
+                                        <Typography
+                                          variant="body2"
+                                          color="text.secondary"
+                                          sx={{ fontStyle: 'italic' }}
+                                        >
+                                          null
+                                        </Typography>
+                                      );
+                                    }
+
+                                    const stringValue = String(value);
+                                    if (stringValue.length > 50) {
+                                      return (
+                                        <Typography variant="body2" title={stringValue}>
+                                          {stringValue.substring(0, 50)}...
+                                        </Typography>
+                                      );
+                                    }
+
+                                    return (
+                                      <Typography variant="body2" title={stringValue}>
+                                        {stringValue}
+                                      </Typography>
+                                    );
+                                  })()}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </Box>
+                ) : null}
               </Box>
             </Paper>
           )}
 
-          {/* Query Editor */}
-          <Paper sx={{ mb: 2, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-            <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button
-                  variant="contained"
-                  startIcon={executing ? <CircularProgress size={16} /> : <PlayIcon />}
-                onClick={executeQuery}
-                  disabled={executing || !query.trim() || !selectedConnection}
-              >
-                {executing ? 'Executing...' : 'Execute Query'}
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<ClearIcon />}
-                  onClick={clearQuery}
-                >
-                Clear
-                </Button>
-              </Box>
-            </Box>
-
-            <Box sx={{ flexGrow: 1, p: 2 }}>
-              <TextField
-                fullWidth
-                multiline
-                rows={8}
-                variant="outlined"
-              placeholder="Enter your SQL query here...\n\nExample:\nSELECT * FROM users LIMIT 10;"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-                sx={{
-                  '& .MuiInputBase-root': {
-                    fontFamily: 'monospace',
-                  },
-                }}
-              />
-            </Box>
-          </Paper>
-
-          {/* Results */}
-          <Paper sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-            <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-              <Typography variant="h6">Query Results</Typography>
-              {results?.executionTime && (
-                <Typography variant="body2" color="text.secondary">
-                  Execution time: {results.executionTime}ms
-                </Typography>
-              )}
-            </Box>
-
-            <Box sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
-              {error && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                  {error}
-                </Alert>
-              )}
-
-              {!results ? (
-                <Typography variant="body2" color="text.secondary">
-                  No query executed yet. Enter a SQL query above and click 'Execute Query'.
-                </Typography>
-              ) : results.success && results.data ? (
-                <TableContainer>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        {results.columns?.map((column, index) => (
-                          <TableCell key={index}>{column}</TableCell>
-                        ))}
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {results.data.map((row, index) => (
-                        <TableRow key={index}>
-                          {results.columns?.map((column, colIndex) => (
-                            <TableCell key={colIndex}>
-                              {JSON.stringify(row[column])}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              ) : (
-                <Alert severity={results.success ? 'success' : 'error'}>
-                  {results.message}
-                </Alert>
-              )}
-            </Box>
-          </Paper>
         </Box>
       </Box>
     </Box>

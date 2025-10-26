@@ -51,13 +51,14 @@ impl Service {
         self,
         connection_name: String,
         table_name: String,
+        filters: Option<std::collections::HashMap<String, String>>,
     ) -> Result<Vec<TableRow>, SqlServiceError> {
         let pool = self
             .connection_manager
             .get_connection(&connection_name)
             .map_err(SqlServiceError::ConnectionManagerError)?;
         let table_data = pool
-            .table_data(table_name)
+            .table_data(table_name, filters)
             .await
             .map_err(SqlServiceError::ConnectionPoolError)?;
         Ok(table_data)

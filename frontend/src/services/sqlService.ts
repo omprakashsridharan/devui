@@ -147,17 +147,37 @@ export class SqlService {
   }
 
   /**
-   * Get table data for a specific table
+   * Get table data for a specific table with optional filters
    */
-  async getTableData(connectionId: string, tableName: string): Promise<{
+  async getTableData(
+    connectionId: string,
+    tableName: string,
+    filters?: Record<string, string>
+  ): Promise<{
     columns: string[];
     data: Record<string, unknown>[];
   }> {
     try {
+      let url = `/services/sql/connections/${connectionId}/tables/${tableName}`;
+
+      // Add query parameters if filters are provided
+      if (filters && Object.keys(filters).length > 0) {
+        const searchParams = new URLSearchParams();
+        Object.entries(filters).forEach(([key, value]) => {
+          if (value && value.trim() !== '') {
+            searchParams.append(key, value.trim());
+          }
+        });
+
+        if (searchParams.toString()) {
+          url += `?${searchParams.toString()}`;
+        }
+      }
+
       const response = await api.get<Array<{
         columns: string[];
         data: Record<string, unknown>;
-      }>>(`/services/sql/connections/${connectionId}/tables/${tableName}`);
+      }>>(url);
 
       // Transform the response to match expected format
       if (response.length > 0) {

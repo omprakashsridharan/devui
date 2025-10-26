@@ -18,6 +18,16 @@ async fn main() {
             password: "postgres".to_string(),
             ssl_mode: Some("disable".to_string()),
         },
+    ).with_postgres(
+        "adyen-au".to_string(),
+        PostgresConfig {
+            host: "localhost".to_string(),
+            port: 5440,
+            database: "expansion-acquiring-adyen".to_string(),
+            username: "postgres".to_string(),
+            password: "password".to_string(),
+            ssl_mode: Some("disable".to_string()),
+        },
     );
 
     let dev_ui_config = DevUIConfigBuilder::default().sql_config(sql_config).build().expect("Error building dev ui config");
