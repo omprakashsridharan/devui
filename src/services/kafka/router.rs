@@ -1,5 +1,9 @@
+use crate::services::kafka::service::Service;
 use axum::Router;
 
-pub fn router() -> Router {
-    Router::new()
+#[derive(Clone)]
+pub struct KafkaServiceState(pub(crate) Service);
+
+pub fn router(service: Service) -> Router {
+    Router::new().with_state(KafkaServiceState(service))
 }

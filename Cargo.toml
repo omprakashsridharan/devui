@@ -4,14 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tower = { version = "0.5", features = ["util"] }
-tower-layer = "0.3"
 axum = "0.8.6"
 tokio = { version = "1.0", features = ["full"] }
 http = "1.0"
-http-body = "1.0"
-pin-project = "1.0"
-futures = "0.3"
 tower-http = { version = "0.6.6", features = ["trace", "fs", "cors"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
@@ -22,6 +17,7 @@ async-trait = "0.1"
 thiserror = "2.0.17"
 derive_builder = "0.20.2"
 hex = "0.4"
+rdkafka = { version = "0.38", features = ["cmake-build"] }
 
 [dev-dependencies]
 cargo-watch = "8.5"

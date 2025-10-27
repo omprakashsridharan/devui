@@ -1,5 +1,6 @@
 pub mod spa;
 pub mod sql;
+mod kafka;
 
 use axum::Json;
 use serde::Serialize;
