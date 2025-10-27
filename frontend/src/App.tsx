@@ -5,6 +5,8 @@ import Layout from './components/Layout';
 import Home from './components/Home';
 import SqlEditor from './components/SqlEditor';
 import ApiTest from './components/ApiTest';
+import ServiceView from './components/ServiceView';
+import Kafka from './components/Kafka';
 
 const theme = createTheme({
   palette: {
@@ -23,7 +25,9 @@ function App() {
           <Route path="/" element={<Layout />}>
             <Route index element={<Home />} />
             <Route path="sql" element={<SqlEditor />} />
+            <Route path="kafka" element={<Kafka />} />
             <Route path="api-test" element={<ApiTest />} />
+            <Route path="service/:serviceName" element={<ServiceView />} />
           </Route>
         </Routes>
       </Router>
