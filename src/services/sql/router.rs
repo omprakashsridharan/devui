@@ -1,4 +1,6 @@
-use crate::handlers::{sql_connections, table_data, tables};
+use crate::handlers::sql::connections;
+use crate::handlers::sql::table_data::table_data;
+use crate::handlers::sql::tables::tables;
 use crate::services::sql::service::Service;
 use axum::routing::get;
 use axum::Router;
@@ -8,7 +10,7 @@ pub struct SqlServiceState(pub(crate) Service);
 
 pub fn router(sql_service: Service) -> Router {
     Router::new()
-        .route("/connections", get(sql_connections))
+        .route("/connections", get(connections))
         .route("/connections/{connection_name}/tables", get(tables))
         .route(
             "/connections/{connection_name}/tables/{table_name}",

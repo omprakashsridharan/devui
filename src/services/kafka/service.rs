@@ -1,4 +1,4 @@
-use crate::services::kafka::client_manager::{ClientManager, ClientManagerError};
+use crate::services::kafka::cluster_manager::{ClientManager, ClusterManagerError};
 use crate::services::kafka::config::Config;
 use crate::services::kafka::models::{Broker, ClusterMetadata, Partition, Topic};
 use rdkafka::consumer::Consumer;
@@ -10,13 +10,13 @@ use thiserror::Error;
 
 #[derive(Clone)]
 pub struct Service {
-    pub client_manager: Arc<ClientManager>,
+    pub cluster_manager: Arc<ClientManager>,
 }
 
 #[derive(Error, Debug)]
 pub enum ServiceError {
     #[error("client manager error")]
-    ClientManagerError(#[from] ClientManagerError),
+    ClientManagerError(#[from] ClusterManagerError),
     #[error("metadata fetch error")]
     MetadataFetchError(#[from] KafkaError),
 }
@@ -26,13 +26,17 @@ impl Service {
         let client_manager =
             ClientManager::new(configs).map_err(ServiceError::ClientManagerError)?;
         Ok(Self {
-            client_manager: Arc::new(client_manager),
+            cluster_manager: Arc::new(client_manager),
         })
+    }
+
+    pub fn get_clusters(&self) -> Vec<String> {
+        self.cluster_manager.get_clusters()
     }
 
     pub fn metadata(&self, cluster_name: String) -> Result<ClusterMetadata, ServiceError> {
         let base_consumer = self
-            .client_manager
+            .cluster_manager
             .get_cluster_base_consumer(&cluster_name)
             .map_err(ServiceError::ClientManagerError)?;
 

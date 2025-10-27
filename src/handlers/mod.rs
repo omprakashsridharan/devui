@@ -1,12 +1,9 @@
-mod kafka;
+pub mod kafka;
 pub mod spa;
 pub mod sql;
 
 use axum::Json;
 use serde::Serialize;
-pub use sql::connections as sql_connections;
-pub use sql::table_data::table_data;
-pub use sql::tables::tables;
 // pub use spa::*;
 
 #[derive(Serialize)]

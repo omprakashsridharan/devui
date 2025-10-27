@@ -10,7 +10,7 @@ pub struct ClientManager {
 }
 
 #[derive(Error, Debug)]
-pub enum ClientManagerError {
+pub enum ClusterManagerError {
     #[error("rdkafka error")]
     KafkaLibError(#[from] KafkaError),
     #[error("client with name \"{0}\" already exists")]
@@ -20,11 +20,11 @@ pub enum ClientManagerError {
 }
 
 impl ClientManager {
-    pub fn new(configs: Config) -> Result<Self, ClientManagerError> {
+    pub fn new(configs: Config) -> Result<Self, ClusterManagerError> {
         let mut base_consumers = HashMap::new();
         for cluster_config in configs.cluster_configs {
             if base_consumers.contains_key(&cluster_config.name) {
-                return Err(ClientManagerError::ClusterWithNameExists(
+                return Err(ClusterManagerError::ClusterWithNameExists(
                     cluster_config.name,
                 ));
             } else {
@@ -34,11 +34,11 @@ impl ClientManager {
                         cluster_config.bootstrap_servers.as_str(),
                     )
                     .create()
-                    .map_err(ClientManagerError::KafkaLibError)?;
+                    .map_err(ClusterManagerError::KafkaLibError)?;
 
                 base_consumers.insert(cluster_config.name.clone(), base_consumer);
                 tracing::info!(
-                    "client with name \"{0}\" bootstrap servers \"{1}\" created",
+                    "client for cluster with name \"{0}\" bootstrap servers \"{1}\" created",
                     cluster_config.name,
                     cluster_config.bootstrap_servers
                 );
@@ -47,9 +47,16 @@ impl ClientManager {
         Ok(Self { base_consumers })
     }
 
-    pub fn get_cluster_base_consumer(&self, name: &str) -> Result<&BaseConsumer, ClientManagerError> {
+    pub fn get_clusters(&self) -> Vec<String> {
+        self.base_consumers.keys().cloned().collect()
+    }
+
+    pub fn get_cluster_base_consumer(
+        &self,
+        name: &str,
+    ) -> Result<&BaseConsumer, ClusterManagerError> {
         self.base_consumers
             .get(name)
-            .ok_or(ClientManagerError::ClusterNotFound(name.to_string()))
+            .ok_or(ClusterManagerError::ClusterNotFound(name.to_string()))
     }
 }
