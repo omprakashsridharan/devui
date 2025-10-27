@@ -1,13 +1,12 @@
 use crate::services::kafka::config::Config;
-use rdkafka::admin::AdminClient;
-use rdkafka::client::DefaultClientContext;
+use rdkafka::consumer::BaseConsumer;
 use rdkafka::error::KafkaError;
 use rdkafka::ClientConfig;
 use std::collections::HashMap;
 use thiserror::Error;
 
 pub struct ClientManager {
-    clients: HashMap<String, AdminClient<DefaultClientContext>>,
+    base_consumers: HashMap<String, BaseConsumer>,
 }
 
 #[derive(Error, Debug)]
@@ -15,27 +14,29 @@ pub enum ClientManagerError {
     #[error("rdkafka error")]
     KafkaLibError(#[from] KafkaError),
     #[error("client with name \"{0}\" already exists")]
-    ClientWithNameExists(String),
+    ClusterWithNameExists(String),
+    #[error("client with name \"{0}\" does not exist")]
+    ClusterNotFound(String),
 }
 
 impl ClientManager {
     pub fn new(configs: Config) -> Result<Self, ClientManagerError> {
-        let mut clients = HashMap::new();
+        let mut base_consumers = HashMap::new();
         for cluster_config in configs.cluster_configs {
-            if clients.contains_key(&cluster_config.name) {
-                return Err(ClientManagerError::ClientWithNameExists(
+            if base_consumers.contains_key(&cluster_config.name) {
+                return Err(ClientManagerError::ClusterWithNameExists(
                     cluster_config.name,
                 ));
             } else {
-                let client: AdminClient<DefaultClientContext> = ClientConfig::new()
+                let base_consumer: BaseConsumer = ClientConfig::new()
                     .set(
                         "bootstrap.servers",
                         cluster_config.bootstrap_servers.as_str(),
                     )
-                    .set("message.timeout.ms", "5000")
                     .create()
                     .map_err(ClientManagerError::KafkaLibError)?;
-                clients.insert(cluster_config.name.clone(), client);
+
+                base_consumers.insert(cluster_config.name.clone(), base_consumer);
                 tracing::info!(
                     "client with name \"{0}\" bootstrap servers \"{1}\" created",
                     cluster_config.name,
@@ -43,6 +44,12 @@ impl ClientManager {
                 );
             }
         }
-        Ok(Self { clients })
+        Ok(Self { base_consumers })
+    }
+
+    pub fn get_cluster_base_consumer(&self, name: &str) -> Result<&BaseConsumer, ClientManagerError> {
+        self.base_consumers
+            .get(name)
+            .ok_or(ClientManagerError::ClusterNotFound(name.to_string()))
     }
 }

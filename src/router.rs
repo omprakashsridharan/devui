@@ -22,6 +22,7 @@ pub async fn dev_ui_router(dev_ui_config: DevUIConfig) -> Result<Router, DevUIEr
         .map_err(DevUIError::SqlServiceError)?;
     let kafka_service = KafkaService::new(dev_ui_config.kafka_config.clone())
         .map_err(DevUIError::KafkaServiceError)?;
+    kafka_service.metadata("local".to_string()).unwrap();
     Ok(Router::new()
         .nest_service("/assets", ServeDir::new("frontend/dist/assets"))
         .route("/api/services", get(dev_ui_services))
