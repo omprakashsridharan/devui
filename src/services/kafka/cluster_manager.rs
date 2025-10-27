@@ -1,12 +1,14 @@
 use crate::services::kafka::config::Config;
 use rdkafka::consumer::BaseConsumer;
 use rdkafka::error::KafkaError;
+use rdkafka::producer::{BaseProducer, FutureProducer};
 use rdkafka::ClientConfig;
 use std::collections::HashMap;
 use thiserror::Error;
 
 pub struct ClientManager {
     base_consumers: HashMap<String, BaseConsumer>,
+    producers: HashMap<String, FutureProducer>,
 }
 
 #[derive(Error, Debug)]
@@ -15,19 +17,30 @@ pub enum ClusterManagerError {
     KafkaLibError(#[from] KafkaError),
     #[error("client with name \"{0}\" already exists")]
     ClusterWithNameExists(String),
-    #[error("client with name \"{0}\" does not exist")]
-    ClusterNotFound(String),
+    #[error("consumer for cluster with name \"{0}\" does not exist")]
+    ClusterConsumerNotFound(String),
+    #[error("producer for cluster with name \"{0}\" does not exist")]
+    ClusterProducerNotFound(String),
 }
 
 impl ClientManager {
     pub fn new(configs: Config) -> Result<Self, ClusterManagerError> {
         let mut base_consumers = HashMap::new();
+        let mut producers = HashMap::new();
         for cluster_config in configs.cluster_configs {
             if base_consumers.contains_key(&cluster_config.name) {
                 return Err(ClusterManagerError::ClusterWithNameExists(
                     cluster_config.name,
                 ));
             } else {
+                let future_producer = ClientConfig::new()
+                    .set(
+                        "bootstrap.servers",
+                        cluster_config.bootstrap_servers.as_str(),
+                    )
+                    .create()
+                    .map_err(ClusterManagerError::KafkaLibError)?;
+                producers.insert(cluster_config.name.clone(), future_producer);
                 let base_consumer: BaseConsumer = ClientConfig::new()
                     .set(
                         "bootstrap.servers",
@@ -44,7 +57,10 @@ impl ClientManager {
                 );
             }
         }
-        Ok(Self { base_consumers })
+        Ok(Self {
+            base_consumers,
+            producers,
+        })
     }
 
     pub fn get_clusters(&self) -> Vec<String> {
@@ -57,6 +73,16 @@ impl ClientManager {
     ) -> Result<&BaseConsumer, ClusterManagerError> {
         self.base_consumers
             .get(name)
-            .ok_or(ClusterManagerError::ClusterNotFound(name.to_string()))
+            .ok_or(ClusterManagerError::ClusterConsumerNotFound(
+                name.to_string(),
+            ))
+    }
+
+    pub fn get_cluster_producer(&self, name: &str) -> Result<&FutureProducer, ClusterManagerError> {
+        self.producers
+            .get(name)
+            .ok_or(ClusterManagerError::ClusterProducerNotFound(
+                name.to_string(),
+            ))
     }
 }

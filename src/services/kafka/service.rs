@@ -3,6 +3,7 @@ use crate::services::kafka::config::Config;
 use crate::services::kafka::models::{Broker, ClusterMetadata, Partition, Topic};
 use rdkafka::consumer::Consumer;
 use rdkafka::error::KafkaError;
+use rdkafka::producer::FutureRecord;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,8 +18,8 @@ pub struct Service {
 pub enum ServiceError {
     #[error("client manager error")]
     ClientManagerError(#[from] ClusterManagerError),
-    #[error("metadata fetch error")]
-    MetadataFetchError(#[from] KafkaError),
+    #[error("Kafka error")]
+    KafkaError(#[from] KafkaError),
 }
 
 impl Service {
@@ -42,7 +43,7 @@ impl Service {
 
         let metadata = base_consumer
             .fetch_metadata(None, Duration::from_secs(5))
-            .map_err(ServiceError::MetadataFetchError)?;
+            .map_err(ServiceError::KafkaError)?;
 
         let mut brokers = HashMap::new();
         let mut topics = Vec::new();
@@ -75,5 +76,32 @@ impl Service {
         let cluster_metadata = ClusterMetadata { brokers, topics };
 
         Ok(cluster_metadata)
+    }
+
+    pub async fn produce(
+        &self,
+        cluster_name: String,
+        topic_name: String,
+        payload: Vec<u8>,
+        key: Vec<u8>,
+    ) -> Result<(), ServiceError> {
+        let producer = self
+            .cluster_manager
+            .get_cluster_producer(&cluster_name)
+            .map_err(ServiceError::ClientManagerError)?;
+        let delivery_status = producer
+            .send(
+                FutureRecord::to(&topic_name).payload(&payload).key(&key),
+                Duration::from_secs(0),
+            )
+            .await;
+
+        match delivery_status {
+            Ok(delivery) => {
+                tracing::info!("kafka message produced successfully {:?}", delivery);
+                Ok(())
+            }
+            Err((e, _)) => Err(ServiceError::KafkaError(e)),
+        }
     }
 }
