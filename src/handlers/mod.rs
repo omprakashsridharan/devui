@@ -1,6 +1,6 @@
+mod kafka;
 pub mod spa;
 pub mod sql;
-mod kafka;
 
 use axum::Json;
 use serde::Serialize;
@@ -16,8 +16,14 @@ pub struct DevUIService {
 }
 
 pub async fn dev_ui_services() -> Json<Vec<DevUIService>> {
-    Json(vec![DevUIService {
-        name: "SQL".to_string(),
-        available: true,
-    }])
+    Json(vec![
+        DevUIService {
+            name: "SQL".to_string(),
+            available: true,
+        },
+        DevUIService {
+            name: "Kafka".to_string(),
+            available: true,
+        },
+    ])
 }

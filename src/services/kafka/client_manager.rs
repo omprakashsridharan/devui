@@ -36,6 +36,11 @@ impl ClientManager {
                     .create()
                     .map_err(ClientManagerError::KafkaLibError)?;
                 clients.insert(cluster_config.name.clone(), client);
+                tracing::info!(
+                    "client with name \"{0}\" bootstrap servers \"{1}\" created",
+                    cluster_config.name,
+                    cluster_config.bootstrap_servers
+                );
             }
         }
         Ok(Self { clients })

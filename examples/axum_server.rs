@@ -1,5 +1,7 @@
 use axum::{response::Html, routing::get, Router};
-use devui::{dev_ui_router, DevUIConfigBuilder, PostgresConfig, SqlConfig};
+use devui::{
+    dev_ui_router, DevUIConfigBuilder, KafkaClusterConfig, KafkaConfig, PostgresConfig, SqlConfig,
+};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 #[tokio::main]
@@ -8,29 +10,40 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     // Create database configuration (optional)
-    let sql_config = SqlConfig::new().with_postgres(
-        "afp-local".to_string(),
-        PostgresConfig {
-            host: "localhost".to_string(),
-            port: 5432,
-            database: "afp_onboarding".to_string(),
-            username: "postgres".to_string(),
-            password: "postgres".to_string(),
-            ssl_mode: Some("disable".to_string()),
-        },
-    ).with_postgres(
-        "adyen-au".to_string(),
-        PostgresConfig {
-            host: "localhost".to_string(),
-            port: 5440,
-            database: "expansion-acquiring-adyen".to_string(),
-            username: "postgres".to_string(),
-            password: "password".to_string(),
-            ssl_mode: Some("disable".to_string()),
-        },
-    );
+    let sql_config = SqlConfig::new()
+        .with_postgres(
+            "afp-local".to_string(),
+            PostgresConfig {
+                host: "localhost".to_string(),
+                port: 5432,
+                database: "afp_onboarding".to_string(),
+                username: "postgres".to_string(),
+                password: "postgres".to_string(),
+                ssl_mode: Some("disable".to_string()),
+            },
+        )
+        .with_postgres(
+            "adyen-au".to_string(),
+            PostgresConfig {
+                host: "localhost".to_string(),
+                port: 5440,
+                database: "expansion-acquiring-adyen".to_string(),
+                username: "postgres".to_string(),
+                password: "password".to_string(),
+                ssl_mode: Some("disable".to_string()),
+            },
+        );
 
-    let dev_ui_config = DevUIConfigBuilder::default().sql_config(sql_config).build().expect("Error building dev ui config");
+    let kafka_config = KafkaConfig::new().with_cluster(KafkaClusterConfig {
+        name: "local".to_string(),
+        bootstrap_servers: "localhost:9092".to_string(),
+    });
+
+    let dev_ui_config = DevUIConfigBuilder::default()
+        .sql_config(sql_config)
+        .kafka_config(kafka_config)
+        .build()
+        .expect("Error building dev ui config");
 
     let dev_ui_router = dev_ui_router(dev_ui_config)
         .await
