@@ -1,7 +1,7 @@
 use crate::services::kafka::config::Config;
 use rdkafka::consumer::BaseConsumer;
 use rdkafka::error::KafkaError;
-use rdkafka::producer::{BaseProducer, FutureProducer};
+use rdkafka::producer::FutureProducer;
 use rdkafka::ClientConfig;
 use std::collections::HashMap;
 use thiserror::Error;

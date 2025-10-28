@@ -3,6 +3,7 @@ use crate::services::kafka::config::Config;
 use crate::services::kafka::models::{Broker, ClusterMetadata, Partition, Topic};
 use rdkafka::consumer::Consumer;
 use rdkafka::error::KafkaError;
+use rdkafka::message::ToBytes;
 use rdkafka::producer::FutureRecord;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -82,8 +83,8 @@ impl Service {
         &self,
         cluster_name: String,
         topic_name: String,
-        payload: Vec<u8>,
-        key: Vec<u8>,
+        key: impl ToBytes,
+        payload: impl ToBytes,
     ) -> Result<(), ServiceError> {
         let producer = self
             .cluster_manager
