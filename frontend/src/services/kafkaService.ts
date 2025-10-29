@@ -25,6 +25,11 @@ export interface KafkaClusterMetadata {
   topics: KafkaTopic[];
 }
 
+export interface KafkaProduceRequest {
+  key: string;
+  value: string; // Stringified JSON
+}
+
 /**
  * Service for managing Kafka operations
  */
@@ -52,6 +57,22 @@ export const kafkaService = {
     } catch (error) {
       console.error(`Failed to fetch cluster metadata for ${clusterName}:`, error);
       throw new Error(`Failed to fetch cluster metadata for ${clusterName}`);
+    }
+  },
+
+  /**
+   * Produce a message to a Kafka topic
+   */
+  async produceMessage(
+    clusterName: string,
+    topicName: string,
+    request: KafkaProduceRequest
+  ): Promise<void> {
+    try {
+      await api.post(`/services/kafka/clusters/${clusterName}/topics/${topicName}`, request);
+    } catch (error) {
+      console.error(`Failed to produce message to topic ${topicName}:`, error);
+      throw new Error(`Failed to produce message to topic ${topicName}`);
     }
   },
 };
