@@ -18,6 +18,9 @@ thiserror = "2.0.17"
 derive_builder = "0.20.2"
 hex = "0.4"
 rdkafka = { version = "0.38", features = ["cmake-build"] }
+tokio-stream = "0.1.17"
+futures-util = "0.3.31"
+async-stream = "0.3.6"
 
 [dev-dependencies]
 cargo-watch = "8.5"

@@ -164,11 +164,10 @@ impl ConnectionPool for PostgresConnectionPool {
 
         // Build WHERE clauses using the comprehensive filter handler
         let where_clauses = if let Some(ref filters) = filters {
-            FilterHandler::build_where_clauses(filters, &column_info)
-                .map_err(|e| {
-                    tracing::error!("Failed to build WHERE clauses: {}", e);
-                    ConnectionPoolError::SqlxError(sqlx::Error::Configuration(e.to_string().into()))
-                })?
+            FilterHandler::build_where_clauses(filters, &column_info).map_err(|e| {
+                tracing::error!("Failed to build WHERE clauses: {}", e);
+                ConnectionPoolError::SqlxError(sqlx::Error::Configuration(e.to_string().into()))
+            })?
         } else {
             Vec::new()
         };
@@ -198,11 +197,7 @@ impl ConnectionPool for PostgresConnectionPool {
                         let decoded_value = match FieldDecoder::decode_field(&row, &column) {
                             Ok(value) => value,
                             Err(e) => {
-                                tracing::warn!(
-                                    "Failed to decode column {}: {}",
-                                    column.name(),
-                                    e
-                                );
+                                tracing::warn!("Failed to decode column {}: {}", column.name(), e);
                                 "[DECODE ERROR]".to_string()
                             }
                         };

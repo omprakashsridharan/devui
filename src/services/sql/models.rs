@@ -1,5 +1,5 @@
-use std::collections::{HashMap, HashSet};
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct TableInfo {

@@ -5,5 +5,5 @@ mod services;
 
 pub use config::{DevUIConfig, DevUIConfigBuilder, DevUIConfigBuilderError};
 pub use router::dev_ui_router;
-pub use services::kafka::config::{Config as KafkaConfig, ClusterConfig as KafkaClusterConfig};
+pub use services::kafka::config::{ClusterConfig as KafkaClusterConfig, Config as KafkaConfig};
 pub use services::sql::config::{Config as SqlConfig, PostgresConfig};

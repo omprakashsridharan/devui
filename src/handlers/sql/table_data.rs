@@ -17,7 +17,10 @@ pub async fn table_data(
         Some(params)
     };
 
-    match sql_service.table_data(connection_name, table_name, filters).await {
+    match sql_service
+        .table_data(connection_name, table_name, filters)
+        .await
+    {
         Ok(table_data) => Ok(Json(table_data)),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }

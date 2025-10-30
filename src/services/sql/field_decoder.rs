@@ -45,7 +45,9 @@ impl FieldDecoder {
             "DATE" => Self::decode_date(row, column_name),
             "TIME" | "TIME WITHOUT TIME ZONE" => Self::decode_time(row, column_name),
             "TIMESTAMP" | "TIMESTAMP WITHOUT TIME ZONE" => Self::decode_timestamp(row, column_name),
-            "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => Self::decode_timestamptz(row, column_name),
+            "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => {
+                Self::decode_timestamptz(row, column_name)
+            }
             "TIMETZ" | "TIME WITH TIME ZONE" => Self::decode_timetz(row, column_name),
 
             // JSON types
@@ -64,103 +66,157 @@ impl FieldDecoder {
     }
 
     // Integer decoders
-    fn decode_i16(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_i16(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: i16 = row.try_get(column_name)?;
         Ok(value.to_string())
     }
 
-    fn decode_i32(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_i32(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: i32 = row.try_get(column_name)?;
         Ok(value.to_string())
     }
 
-    fn decode_i64(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_i64(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: i64 = row.try_get(column_name)?;
         Ok(value.to_string())
     }
 
     // Floating point decoders
-    fn decode_f32(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_f32(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: f32 = row.try_get(column_name)?;
         Ok(value.to_string())
     }
 
-    fn decode_f64(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_f64(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: f64 = row.try_get(column_name)?;
         Ok(value.to_string())
     }
 
     // Numeric decoder
-    fn decode_numeric(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_numeric(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: String = row.try_get(column_name)?;
         Ok(value)
     }
 
     // Boolean decoder
-    fn decode_bool(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_bool(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: bool = row.try_get(column_name)?;
         Ok(value.to_string())
     }
 
     // Text decoder
-    fn decode_text(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_text(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: Option<String> = row.try_get(column_name)?;
         Ok(value.unwrap_or_default())
     }
 
     // Binary decoder
-    fn decode_bytea(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_bytea(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: Vec<u8> = row.try_get(column_name)?;
         let hex_string = format!("\\x{}", hex::encode(&value));
         Ok(hex_string)
     }
 
     // Date/Time decoders
-    fn decode_date(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_date(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: NaiveDate = row.try_get(column_name)?;
         Ok(value.to_string())
     }
 
-    fn decode_time(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_time(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: NaiveTime = row.try_get(column_name)?;
         Ok(value.to_string())
     }
 
-    fn decode_timestamp(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_timestamp(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: NaiveDateTime = row.try_get(column_name)?;
         Ok(value.to_string())
     }
 
-    fn decode_timestamptz(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_timestamptz(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: DateTime<Utc> = row.try_get(column_name)?;
         Ok(value.to_string())
     }
 
-    fn decode_timetz(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_timetz(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         // TIME WITH TIME ZONE is complex, decode as string for now
         let value: String = row.try_get(column_name)?;
         Ok(value)
     }
 
     // JSON decoders
-    fn decode_json(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_json(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: String = row.try_get(column_name)?;
         Ok(value)
     }
 
-    fn decode_jsonb(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_jsonb(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: Json<serde_json::Value> = row.try_get(column_name)?;
         Ok(value.to_string())
     }
 
     // UUID decoder
-    fn decode_uuid(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_uuid(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: String = row.try_get(column_name)?;
         Ok(value)
     }
 
     // Array decoder (basic support)
-    fn decode_array(row: &sqlx::postgres::PgRow, column_name: &str) -> Result<String, FieldDecodeError> {
+    fn decode_array(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
         let value: String = row.try_get(column_name)?;
         Ok(value)
     }
@@ -265,7 +321,11 @@ mod tests {
         let array_types = vec!["_TEXT", "_INT4", "_BOOL", "_TIMESTAMP"];
 
         for array_type in array_types {
-            assert!(array_type.starts_with("_"), "Array type {} should start with underscore", array_type);
+            assert!(
+                array_type.starts_with("_"),
+                "Array type {} should start with underscore",
+                array_type
+            );
         }
     }
 
@@ -282,17 +342,45 @@ mod tests {
         for custom_type in custom_types {
             // These should not match any specific decoder and fall back to custom
             let type_name = custom_type.to_ascii_uppercase();
-            assert!(!matches!(type_name.as_str(),
-                "INT2" | "SMALLINT" | "INT4" | "INTEGER" | "INT8" | "BIGINT" |
-                "FLOAT4" | "REAL" | "FLOAT8" | "DOUBLE PRECISION" |
-                "NUMERIC" | "DECIMAL" | "BOOL" | "BOOLEAN" |
-                "TEXT" | "VARCHAR" | "CHAR" | "CHARACTER" | "CHARACTER VARYING" |
-                "BYTEA" | "DATE" | "TIME" | "TIME WITHOUT TIME ZONE" |
-                "TIMESTAMP" | "TIMESTAMP WITHOUT TIME ZONE" |
-                "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" |
-                "TIMETZ" | "TIME WITH TIME ZONE" |
-                "JSON" | "JSONB" | "UUID"
-            ), "Custom type {} should not match specific decoders", custom_type);
+            assert!(
+                !matches!(
+                    type_name.as_str(),
+                    "INT2"
+                        | "SMALLINT"
+                        | "INT4"
+                        | "INTEGER"
+                        | "INT8"
+                        | "BIGINT"
+                        | "FLOAT4"
+                        | "REAL"
+                        | "FLOAT8"
+                        | "DOUBLE PRECISION"
+                        | "NUMERIC"
+                        | "DECIMAL"
+                        | "BOOL"
+                        | "BOOLEAN"
+                        | "TEXT"
+                        | "VARCHAR"
+                        | "CHAR"
+                        | "CHARACTER"
+                        | "CHARACTER VARYING"
+                        | "BYTEA"
+                        | "DATE"
+                        | "TIME"
+                        | "TIME WITHOUT TIME ZONE"
+                        | "TIMESTAMP"
+                        | "TIMESTAMP WITHOUT TIME ZONE"
+                        | "TIMESTAMPTZ"
+                        | "TIMESTAMP WITH TIME ZONE"
+                        | "TIMETZ"
+                        | "TIME WITH TIME ZONE"
+                        | "JSON"
+                        | "JSONB"
+                        | "UUID"
+                ),
+                "Custom type {} should not match specific decoders",
+                custom_type
+            );
         }
     }
 
@@ -301,24 +389,44 @@ mod tests {
         // Test that we cover all major PostgreSQL types
         let covered_types = vec![
             // Integer types
-            "INT2", "SMALLINT", "INT4", "INTEGER", "INT8", "BIGINT",
+            "INT2",
+            "SMALLINT",
+            "INT4",
+            "INTEGER",
+            "INT8",
+            "BIGINT",
             // Floating point types
-            "FLOAT4", "REAL", "FLOAT8", "DOUBLE PRECISION",
+            "FLOAT4",
+            "REAL",
+            "FLOAT8",
+            "DOUBLE PRECISION",
             // Decimal types
-            "NUMERIC", "DECIMAL",
+            "NUMERIC",
+            "DECIMAL",
             // Boolean types
-            "BOOL", "BOOLEAN",
+            "BOOL",
+            "BOOLEAN",
             // Text types
-            "TEXT", "VARCHAR", "CHAR", "CHARACTER", "CHARACTER VARYING",
+            "TEXT",
+            "VARCHAR",
+            "CHAR",
+            "CHARACTER",
+            "CHARACTER VARYING",
             // Binary types
             "BYTEA",
             // Date/Time types
-            "DATE", "TIME", "TIME WITHOUT TIME ZONE",
-            "TIMESTAMP", "TIMESTAMP WITHOUT TIME ZONE",
-            "TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE",
-            "TIMETZ", "TIME WITH TIME ZONE",
+            "DATE",
+            "TIME",
+            "TIME WITHOUT TIME ZONE",
+            "TIMESTAMP",
+            "TIMESTAMP WITHOUT TIME ZONE",
+            "TIMESTAMPTZ",
+            "TIMESTAMP WITH TIME ZONE",
+            "TIMETZ",
+            "TIME WITH TIME ZONE",
             // JSON types
-            "JSON", "JSONB",
+            "JSON",
+            "JSONB",
             // UUID type
             "UUID",
         ];
@@ -327,15 +435,38 @@ mod tests {
             let type_name = pg_type.to_ascii_uppercase();
             // Verify that each type is handled by our match statement
             match type_name.as_str() {
-                "INT2" | "SMALLINT" | "INT4" | "INTEGER" | "INT8" | "BIGINT" |
-                "FLOAT4" | "REAL" | "FLOAT8" | "DOUBLE PRECISION" |
-                "NUMERIC" | "DECIMAL" | "BOOL" | "BOOLEAN" |
-                "TEXT" | "VARCHAR" | "CHAR" | "CHARACTER" | "CHARACTER VARYING" |
-                "BYTEA" | "DATE" | "TIME" | "TIME WITHOUT TIME ZONE" |
-                "TIMESTAMP" | "TIMESTAMP WITHOUT TIME ZONE" |
-                "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" |
-                "TIMETZ" | "TIME WITH TIME ZONE" |
-                "JSON" | "JSONB" | "UUID" => {
+                "INT2"
+                | "SMALLINT"
+                | "INT4"
+                | "INTEGER"
+                | "INT8"
+                | "BIGINT"
+                | "FLOAT4"
+                | "REAL"
+                | "FLOAT8"
+                | "DOUBLE PRECISION"
+                | "NUMERIC"
+                | "DECIMAL"
+                | "BOOL"
+                | "BOOLEAN"
+                | "TEXT"
+                | "VARCHAR"
+                | "CHAR"
+                | "CHARACTER"
+                | "CHARACTER VARYING"
+                | "BYTEA"
+                | "DATE"
+                | "TIME"
+                | "TIME WITHOUT TIME ZONE"
+                | "TIMESTAMP"
+                | "TIMESTAMP WITHOUT TIME ZONE"
+                | "TIMESTAMPTZ"
+                | "TIMESTAMP WITH TIME ZONE"
+                | "TIMETZ"
+                | "TIME WITH TIME ZONE"
+                | "JSON"
+                | "JSONB"
+                | "UUID" => {
                     // This type is covered
                 }
                 _ => {

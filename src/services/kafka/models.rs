@@ -25,3 +25,9 @@ pub struct Partition {
     pub partition: i32,
     pub leader_id: i32,
 }
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct ConsumeMessage {
+    pub key: Option<String>,
+    pub value: Option<String>,
+}

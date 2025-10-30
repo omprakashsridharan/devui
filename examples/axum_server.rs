@@ -36,7 +36,7 @@ async fn main() {
 
     let kafka_config = KafkaConfig::new().with_cluster(KafkaClusterConfig {
         name: "local".to_string(),
-        bootstrap_servers: "localhost:9092".to_string(),
+        bootstrap_servers: "127.0.0.1:9092".to_string(),
     });
 
     let dev_ui_config = DevUIConfigBuilder::default()

@@ -1,7 +1,7 @@
 use crate::services::kafka::cluster_manager::{ClientManager, ClusterManagerError};
 use crate::services::kafka::config::Config;
 use crate::services::kafka::models::{Broker, ClusterMetadata, Partition, Topic};
-use rdkafka::consumer::Consumer;
+use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::error::KafkaError;
 use rdkafka::message::ToBytes;
 use rdkafka::producer::FutureRecord;
@@ -104,5 +104,22 @@ impl Service {
             }
             Err((e, _)) => Err(ServiceError::KafkaError(e)),
         }
+    }
+
+    pub async fn create_consumer(
+        &self,
+        cluster_name: String,
+        topic_name: String,
+    ) -> Result<StreamConsumer, ServiceError> {
+        let consumer = self
+            .cluster_manager
+            .create_stream_consumer(&cluster_name)
+            .map_err(ServiceError::ClientManagerError)?;
+
+        consumer
+            .subscribe(&[&topic_name])
+            .map_err(ServiceError::KafkaError)?;
+
+        Ok(consumer)
     }
 }

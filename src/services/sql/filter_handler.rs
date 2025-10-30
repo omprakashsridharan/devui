@@ -95,7 +95,8 @@ impl FilterHandler {
         filter_value: &str,
     ) -> Result<ColumnFilter, FilterError> {
         // Check if the filter contains an operation prefix
-        let (operation, value) = if let Some((op_str, val)) = Self::extract_operation(filter_value) {
+        let (operation, value) = if let Some((op_str, val)) = Self::extract_operation(filter_value)
+        {
             let operation = FilterOperation::from_str(op_str)
                 .ok_or_else(|| FilterError::InvalidOperation(op_str.to_string()))?;
             (operation, val)
@@ -127,8 +128,10 @@ impl FilterHandler {
     fn get_default_operation(data_type: &str) -> FilterOperation {
         match data_type.to_lowercase().as_str() {
             // Exact match for numeric types
-            "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real" | "double precision" |
-            "int2" | "int4" | "int8" | "float4" | "float8" => FilterOperation::Equals,
+            "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real"
+            | "double precision" | "int2" | "int4" | "int8" | "float4" | "float8" => {
+                FilterOperation::Equals
+            }
 
             // Exact match for boolean
             "boolean" | "bool" => FilterOperation::Equals,
@@ -137,7 +140,9 @@ impl FilterHandler {
             "uuid" => FilterOperation::Equals,
 
             // Contains for text types
-            "text" | "varchar" | "char" | "character" | "character varying" => FilterOperation::Contains,
+            "text" | "varchar" | "char" | "character" | "character varying" => {
+                FilterOperation::Contains
+            }
 
             // Contains for date/time types
             "timestamp" | "timestamptz" | "date" | "time" | "timetz" => FilterOperation::Contains,
@@ -164,36 +169,49 @@ impl FilterHandler {
             FilterOperation::Equals => {
                 Self::build_equals_clause(&filter.column_name, &filter.data_type, &escaped_value)
             }
-            FilterOperation::Contains => {
-                Ok(format!("{}::text ILIKE '%{}%'", filter.column_name, escaped_value))
-            }
-            FilterOperation::StartsWith => {
-                Ok(format!("{}::text ILIKE '{}%'", filter.column_name, escaped_value))
-            }
-            FilterOperation::EndsWith => {
-                Ok(format!("{}::text ILIKE '%{}'", filter.column_name, escaped_value))
-            }
-            FilterOperation::GreaterThan => {
-                Self::build_comparison_clause(&filter.column_name, &filter.data_type, ">", &escaped_value)
-            }
-            FilterOperation::LessThan => {
-                Self::build_comparison_clause(&filter.column_name, &filter.data_type, "<", &escaped_value)
-            }
-            FilterOperation::GreaterThanOrEqual => {
-                Self::build_comparison_clause(&filter.column_name, &filter.data_type, ">=", &escaped_value)
-            }
-            FilterOperation::LessThanOrEqual => {
-                Self::build_comparison_clause(&filter.column_name, &filter.data_type, "<=", &escaped_value)
-            }
-            FilterOperation::NotEquals => {
-                Self::build_not_equals_clause(&filter.column_name, &filter.data_type, &escaped_value)
-            }
-            FilterOperation::IsNull => {
-                Ok(format!("{} IS NULL", filter.column_name))
-            }
-            FilterOperation::IsNotNull => {
-                Ok(format!("{} IS NOT NULL", filter.column_name))
-            }
+            FilterOperation::Contains => Ok(format!(
+                "{}::text ILIKE '%{}%'",
+                filter.column_name, escaped_value
+            )),
+            FilterOperation::StartsWith => Ok(format!(
+                "{}::text ILIKE '{}%'",
+                filter.column_name, escaped_value
+            )),
+            FilterOperation::EndsWith => Ok(format!(
+                "{}::text ILIKE '%{}'",
+                filter.column_name, escaped_value
+            )),
+            FilterOperation::GreaterThan => Self::build_comparison_clause(
+                &filter.column_name,
+                &filter.data_type,
+                ">",
+                &escaped_value,
+            ),
+            FilterOperation::LessThan => Self::build_comparison_clause(
+                &filter.column_name,
+                &filter.data_type,
+                "<",
+                &escaped_value,
+            ),
+            FilterOperation::GreaterThanOrEqual => Self::build_comparison_clause(
+                &filter.column_name,
+                &filter.data_type,
+                ">=",
+                &escaped_value,
+            ),
+            FilterOperation::LessThanOrEqual => Self::build_comparison_clause(
+                &filter.column_name,
+                &filter.data_type,
+                "<=",
+                &escaped_value,
+            ),
+            FilterOperation::NotEquals => Self::build_not_equals_clause(
+                &filter.column_name,
+                &filter.data_type,
+                &escaped_value,
+            ),
+            FilterOperation::IsNull => Ok(format!("{} IS NULL", filter.column_name)),
+            FilterOperation::IsNotNull => Ok(format!("{} IS NOT NULL", filter.column_name)),
             FilterOperation::In => {
                 Self::build_in_clause(&filter.column_name, &filter.data_type, &filter.value)
             }
@@ -211,8 +229,8 @@ impl FilterHandler {
     ) -> Result<String, FilterError> {
         match data_type.to_lowercase().as_str() {
             // Numeric types - try exact match first, fallback to text search
-            "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real" | "double precision" |
-            "int2" | "int4" | "int8" | "float4" | "float8" => {
+            "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real"
+            | "double precision" | "int2" | "int4" | "int8" | "float4" | "float8" => {
                 if Self::is_numeric(value) {
                     Ok(format!("{} = {}", column_name, value))
                 } else {
@@ -227,9 +245,7 @@ impl FilterHandler {
             }
 
             // UUID - exact match
-            "uuid" => {
-                Ok(format!("{} = '{}'", column_name, value))
-            }
+            "uuid" => Ok(format!("{} = '{}'", column_name, value)),
 
             // Text types - case-insensitive match
             "text" | "varchar" | "char" | "character" | "character varying" => {
@@ -242,24 +258,16 @@ impl FilterHandler {
             }
 
             // JSON types - text search
-            "json" | "jsonb" => {
-                Ok(format!("{}::text ILIKE '%{}%'", column_name, value))
-            }
+            "json" | "jsonb" => Ok(format!("{}::text ILIKE '%{}%'", column_name, value)),
 
             // Arrays - text search
-            "array" => {
-                Ok(format!("{}::text ILIKE '%{}%'", column_name, value))
-            }
+            "array" => Ok(format!("{}::text ILIKE '%{}%'", column_name, value)),
 
             // User-defined types - text search
-            "user-defined" => {
-                Ok(format!("{}::text ILIKE '%{}%'", column_name, value))
-            }
+            "user-defined" => Ok(format!("{}::text ILIKE '%{}%'", column_name, value)),
 
             // Default - text search
-            _ => {
-                Ok(format!("{}::text ILIKE '%{}%'", column_name, value))
-            }
+            _ => Ok(format!("{}::text ILIKE '%{}%'", column_name, value)),
         }
     }
 
@@ -272,12 +280,15 @@ impl FilterHandler {
     ) -> Result<String, FilterError> {
         match data_type.to_lowercase().as_str() {
             // Numeric types
-            "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real" | "double precision" |
-            "int2" | "int4" | "int8" | "float4" | "float8" => {
+            "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real"
+            | "double precision" | "int2" | "int4" | "int8" | "float4" | "float8" => {
                 if Self::is_numeric(value) {
                     Ok(format!("{} {} {}", column_name, operator, value))
                 } else {
-                    Err(FilterError::InvalidValue(format!("Non-numeric value '{}' for numeric comparison", value)))
+                    Err(FilterError::InvalidValue(format!(
+                        "Non-numeric value '{}' for numeric comparison",
+                        value
+                    )))
                 }
             }
 
@@ -292,9 +303,7 @@ impl FilterHandler {
             }
 
             // Other types - convert to text for comparison
-            _ => {
-                Ok(format!("{}::text {} '{}'", column_name, operator, value))
-            }
+            _ => Ok(format!("{}::text {} '{}'", column_name, operator, value)),
         }
     }
 
@@ -306,8 +315,8 @@ impl FilterHandler {
     ) -> Result<String, FilterError> {
         match data_type.to_lowercase().as_str() {
             // Numeric types
-            "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real" | "double precision" |
-            "int2" | "int4" | "int8" | "float4" | "float8" => {
+            "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real"
+            | "double precision" | "int2" | "int4" | "int8" | "float4" | "float8" => {
                 if Self::is_numeric(value) {
                     Ok(format!("{} != {}", column_name, value))
                 } else {
@@ -322,9 +331,7 @@ impl FilterHandler {
             }
 
             // UUID
-            "uuid" => {
-                Ok(format!("{} != '{}'", column_name, value))
-            }
+            "uuid" => Ok(format!("{} != '{}'", column_name, value)),
 
             // Text types
             "text" | "varchar" | "char" | "character" | "character varying" => {
@@ -332,9 +339,7 @@ impl FilterHandler {
             }
 
             // Other types
-            _ => {
-                Ok(format!("{}::text NOT ILIKE '%{}%'", column_name, value))
-            }
+            _ => Ok(format!("{}::text NOT ILIKE '%{}%'", column_name, value)),
         }
     }
 
@@ -349,22 +354,22 @@ impl FilterHandler {
             return Err(FilterError::InvalidValue("Empty IN list".to_string()));
         }
 
-        let formatted_values = values.iter()
+        let formatted_values = values
+            .iter()
             .map(|v| {
                 let escaped = Self::escape_sql_value(v);
                 match data_type.to_lowercase().as_str() {
-                    "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real" | "double precision" |
-                    "int2" | "int4" | "int8" | "float4" | "float8" => {
+                    "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real"
+                    | "double precision" | "int2" | "int4" | "int8" | "float4" | "float8" => {
                         if Self::is_numeric(v) {
                             escaped
                         } else {
                             format!("'{}'", escaped)
                         }
                     }
-                    "boolean" | "bool" => {
-                        Self::parse_boolean(v).map(|b| b.to_string())
-                            .unwrap_or_else(|_| format!("'{}'", escaped))
-                    }
+                    "boolean" | "bool" => Self::parse_boolean(v)
+                        .map(|b| b.to_string())
+                        .unwrap_or_else(|_| format!("'{}'", escaped)),
                     _ => format!("'{}'", escaped),
                 }
             })
@@ -399,7 +404,10 @@ impl FilterHandler {
         match value.to_lowercase().as_str() {
             "true" | "t" | "1" | "yes" | "y" | "on" => Ok(true),
             "false" | "f" | "0" | "no" | "n" | "off" => Ok(false),
-            _ => Err(FilterError::InvalidValue(format!("Invalid boolean value: '{}'", value))),
+            _ => Err(FilterError::InvalidValue(format!(
+                "Invalid boolean value: '{}'",
+                value
+            ))),
         }
     }
 }
@@ -412,7 +420,6 @@ pub enum FilterError {
 
     #[error("Invalid filter value: {0}")]
     InvalidValue(String),
-
     // #[error("Filter parsing error: {0}")]
     // ParseError(String),
 }
@@ -423,31 +430,70 @@ mod tests {
 
     #[test]
     fn test_filter_operation_parsing() {
-        assert_eq!(FilterOperation::from_str("eq"), Some(FilterOperation::Equals));
-        assert_eq!(FilterOperation::from_str("="), Some(FilterOperation::Equals));
-        assert_eq!(FilterOperation::from_str("contains"), Some(FilterOperation::Contains));
-        assert_eq!(FilterOperation::from_str("gt"), Some(FilterOperation::GreaterThan));
-        assert_eq!(FilterOperation::from_str(">"), Some(FilterOperation::GreaterThan));
-        assert_eq!(FilterOperation::from_str("null"), Some(FilterOperation::IsNull));
+        assert_eq!(
+            FilterOperation::from_str("eq"),
+            Some(FilterOperation::Equals)
+        );
+        assert_eq!(
+            FilterOperation::from_str("="),
+            Some(FilterOperation::Equals)
+        );
+        assert_eq!(
+            FilterOperation::from_str("contains"),
+            Some(FilterOperation::Contains)
+        );
+        assert_eq!(
+            FilterOperation::from_str("gt"),
+            Some(FilterOperation::GreaterThan)
+        );
+        assert_eq!(
+            FilterOperation::from_str(">"),
+            Some(FilterOperation::GreaterThan)
+        );
+        assert_eq!(
+            FilterOperation::from_str("null"),
+            Some(FilterOperation::IsNull)
+        );
         assert_eq!(FilterOperation::from_str("in"), Some(FilterOperation::In));
         assert_eq!(FilterOperation::from_str("invalid"), None);
     }
 
     #[test]
     fn test_extract_operation() {
-        assert_eq!(FilterHandler::extract_operation("gt:100"), Some(("gt", "100".to_string())));
-        assert_eq!(FilterHandler::extract_operation("contains:test"), Some(("contains", "test".to_string())));
+        assert_eq!(
+            FilterHandler::extract_operation("gt:100"),
+            Some(("gt", "100".to_string()))
+        );
+        assert_eq!(
+            FilterHandler::extract_operation("contains:test"),
+            Some(("contains", "test".to_string()))
+        );
         assert_eq!(FilterHandler::extract_operation("no_colon"), None);
         assert_eq!(FilterHandler::extract_operation(""), None);
     }
 
     #[test]
     fn test_get_default_operation() {
-        assert_eq!(FilterHandler::get_default_operation("integer"), FilterOperation::Equals);
-        assert_eq!(FilterHandler::get_default_operation("boolean"), FilterOperation::Equals);
-        assert_eq!(FilterHandler::get_default_operation("text"), FilterOperation::Contains);
-        assert_eq!(FilterHandler::get_default_operation("timestamp"), FilterOperation::Contains);
-        assert_eq!(FilterHandler::get_default_operation("unknown"), FilterOperation::Contains);
+        assert_eq!(
+            FilterHandler::get_default_operation("integer"),
+            FilterOperation::Equals
+        );
+        assert_eq!(
+            FilterHandler::get_default_operation("boolean"),
+            FilterOperation::Equals
+        );
+        assert_eq!(
+            FilterHandler::get_default_operation("text"),
+            FilterOperation::Contains
+        );
+        assert_eq!(
+            FilterHandler::get_default_operation("timestamp"),
+            FilterOperation::Contains
+        );
+        assert_eq!(
+            FilterHandler::get_default_operation("unknown"),
+            FilterOperation::Contains
+        );
     }
 
     #[test]
@@ -525,7 +571,8 @@ mod tests {
 
     #[test]
     fn test_build_not_in_clause() {
-        let result = FilterHandler::build_not_in_clause("status", "text", "active,inactive").unwrap();
+        let result =
+            FilterHandler::build_not_in_clause("status", "text", "active,inactive").unwrap();
         assert_eq!(result, "status NOT IN ('active', 'inactive')");
     }
 
@@ -545,7 +592,9 @@ mod tests {
         let result = FilterHandler::build_where_clauses(&filters, &column_info).unwrap();
 
         assert_eq!(result.len(), 3);
-        assert!(result.iter().any(|clause| clause.contains("name::text ILIKE '%test%'")));
+        assert!(result
+            .iter()
+            .any(|clause| clause.contains("name::text ILIKE '%test%'")));
         assert!(result.iter().any(|clause| clause.contains("age > 18")));
         assert!(result.iter().any(|clause| clause.contains("active = true")));
     }
@@ -570,55 +619,94 @@ mod tests {
             ("decimal", "67.89", "column = 67.89"),
             ("real", "1.23", "column = 1.23"),
             ("double precision", "4.56", "column = 4.56"),
-
             // Boolean types
             ("boolean", "true", "column = true"),
             ("bool", "false", "column = false"),
-
             // Text types
             ("text", "test", "column ILIKE 'test'"),
             ("varchar", "value", "column ILIKE 'value'"),
             ("char", "char", "column ILIKE 'char'"),
-
             // Date/time types
-            ("timestamp", "2023-01-01", "column::text ILIKE '%2023-01-01%'"),
-            ("timestamptz", "2023-01-01", "column::text ILIKE '%2023-01-01%'"),
+            (
+                "timestamp",
+                "2023-01-01",
+                "column::text ILIKE '%2023-01-01%'",
+            ),
+            (
+                "timestamptz",
+                "2023-01-01",
+                "column::text ILIKE '%2023-01-01%'",
+            ),
             ("date", "2023-01-01", "column::text ILIKE '%2023-01-01%'"),
             ("time", "12:00:00", "column::text ILIKE '%12:00:00%'"),
-
             // JSON types
             ("json", "key", "column::text ILIKE '%key%'"),
             ("jsonb", "value", "column::text ILIKE '%value%'"),
-
             // UUID
-            ("uuid", "123e4567-e89b-12d3-a456-426614174000", "column = '123e4567-e89b-12d3-a456-426614174000'"),
-
+            (
+                "uuid",
+                "123e4567-e89b-12d3-a456-426614174000",
+                "column = '123e4567-e89b-12d3-a456-426614174000'",
+            ),
             // Arrays
             ("array", "item", "column::text ILIKE '%item%'"),
-
             // User-defined types
             ("user-defined", "custom", "column::text ILIKE '%custom%'"),
         ];
 
         for (data_type, value, expected_pattern) in test_cases {
             let result = FilterHandler::build_equals_clause("column", data_type, value).unwrap();
-            assert!(result.contains(expected_pattern),
+            assert!(
+                result.contains(expected_pattern),
                 "Failed for {}: expected pattern '{}' in result '{}'",
-                data_type, expected_pattern, result);
+                data_type,
+                expected_pattern,
+                result
+            );
         }
     }
 
     #[test]
     fn test_advanced_filter_operations() {
         let test_cases = vec![
-            (FilterOperation::Contains, "text", "test", "column::text ILIKE '%test%'"),
-            (FilterOperation::StartsWith, "text", "test", "column::text ILIKE 'test%'"),
-            (FilterOperation::EndsWith, "text", "test", "column::text ILIKE '%test'"),
+            (
+                FilterOperation::Contains,
+                "text",
+                "test",
+                "column::text ILIKE '%test%'",
+            ),
+            (
+                FilterOperation::StartsWith,
+                "text",
+                "test",
+                "column::text ILIKE 'test%'",
+            ),
+            (
+                FilterOperation::EndsWith,
+                "text",
+                "test",
+                "column::text ILIKE '%test'",
+            ),
             (FilterOperation::GreaterThan, "integer", "10", "column > 10"),
             (FilterOperation::LessThan, "integer", "20", "column < 20"),
-            (FilterOperation::GreaterThanOrEqual, "integer", "15", "column >= 15"),
-            (FilterOperation::LessThanOrEqual, "integer", "25", "column <= 25"),
-            (FilterOperation::NotEquals, "text", "test", "column NOT ILIKE 'test'"),
+            (
+                FilterOperation::GreaterThanOrEqual,
+                "integer",
+                "15",
+                "column >= 15",
+            ),
+            (
+                FilterOperation::LessThanOrEqual,
+                "integer",
+                "25",
+                "column <= 25",
+            ),
+            (
+                FilterOperation::NotEquals,
+                "text",
+                "test",
+                "column NOT ILIKE 'test'",
+            ),
             (FilterOperation::IsNull, "text", "", "column IS NULL"),
             (FilterOperation::IsNotNull, "text", "", "column IS NOT NULL"),
         ];
@@ -632,9 +720,13 @@ mod tests {
             };
 
             let result = FilterHandler::build_where_clause(&filter).unwrap();
-            assert!(result.contains(expected_pattern),
+            assert!(
+                result.contains(expected_pattern),
                 "Failed for {:?}: expected pattern '{}' in result '{}'",
-                operation, expected_pattern, result);
+                operation,
+                expected_pattern,
+                result
+            );
         }
     }
 }
