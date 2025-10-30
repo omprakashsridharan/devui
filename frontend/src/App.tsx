@@ -1,20 +1,14 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Layout from './components/Layout';
 import Home from './components/Home';
 import SqlEditor from './components/SqlEditor';
-import ApiTest from './components/ApiTest';
 import ServiceView from './components/ServiceView';
 import Kafka from './components/Kafka';
+import theme from './theme';
 
-const theme = createTheme({
-  palette: {
-    primary: {
-      main: '#1976d2',
-    },
-  },
-});
+// theme comes from ./theme
 
 function App() {
   return (
@@ -26,7 +20,6 @@ function App() {
             <Route index element={<Home />} />
             <Route path="sql" element={<SqlEditor />} />
             <Route path="kafka" element={<Kafka />} />
-            <Route path="api-test" element={<ApiTest />} />
             <Route path="service/:serviceName" element={<ServiceView />} />
           </Route>
         </Routes>

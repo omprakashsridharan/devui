@@ -48,12 +48,6 @@ const staticMenuItems: MenuItem[] = [
     icon: <HomeIcon />,
     type: 'static',
   },
-  {
-    text: 'API Test',
-    path: '/api-test',
-    icon: <ApiIcon />,
-    type: 'static',
-  },
 ];
 
 // Service icon mapping
@@ -159,11 +153,13 @@ const Layout: React.FC = () => {
         justifyContent: drawerOpen ? 'space-between' : 'center',
         minHeight: 48,
         px: drawerOpen ? 2 : 0,
-        backgroundColor: 'primary.main',
-        color: 'primary.contrastText',
+        backgroundColor: 'background.paper',
+        color: 'text.primary',
+        borderBottom: '1px solid',
+        borderColor: 'divider',
       }}>
         {drawerOpen && (
-          <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold', color: 'primary.contrastText' }}>
+          <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold' }}>
             DevUI
           </Typography>
         )}
@@ -175,9 +171,9 @@ const Layout: React.FC = () => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'primary.contrastText',
+            color: 'text.primary',
             '&:hover': {
-              backgroundColor: 'primary.dark',
+              backgroundColor: 'action.hover',
             },
           }}
         >
@@ -198,20 +194,17 @@ const Layout: React.FC = () => {
                 mx: 1,
                 borderRadius: 1,
                 '&.Mui-selected': {
-                  backgroundColor: 'primary.main',
-                  color: 'primary.contrastText',
-                  boxShadow: 1,
+                  backgroundColor: 'action.selected',
+                  color: 'text.primary',
                   '&:hover': {
-                    backgroundColor: 'primary.dark',
-                    boxShadow: 2,
+                    backgroundColor: 'action.selected',
                   },
                   '& .MuiListItemIcon-root': {
-                    color: 'primary.contrastText',
+                    color: 'text.primary',
                   },
                 },
                 '&:hover': {
                   backgroundColor: 'action.hover',
-                  boxShadow: 1,
                 },
               }}
             >
@@ -381,13 +374,9 @@ const Layout: React.FC = () => {
           ml: `${currentDrawerWidth}px`,
           border: 'none',
           boxShadow: 'none',
-          backgroundColor: (() => {
-            const currentItem = getCurrentMenuItem();
-            if (currentItem && currentItem.type === 'service') {
-              return 'primary.light';
-            }
-            return 'primary.main';
-          })(),
+          backgroundColor: 'background.paper',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
           transition: (theme) =>
             theme.transitions.create(['width', 'margin', 'backgroundColor'], {
               easing: theme.transitions.easing.sharp,
@@ -413,9 +402,10 @@ const Layout: React.FC = () => {
                     gap: 1,
                     px: 2,
                     py: 0.5,
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    backgroundColor: 'action.hover',
                     borderRadius: 1,
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    border: '1px solid',
+                    borderColor: 'divider',
                   }}>
                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
                       {currentItem.icon}
@@ -444,9 +434,10 @@ const Layout: React.FC = () => {
           '& .MuiDrawer-paper': {
             width: currentDrawerWidth,
             boxSizing: 'border-box',
-            backgroundColor: 'grey.50',
+            backgroundColor: 'background.paper',
             border: 'none',
-            borderRight: 'none',
+            borderRight: '1px solid',
+            borderRightColor: 'divider',
             borderLeft: 'none',
             borderTop: 'none',
             borderBottom: 'none',

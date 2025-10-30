@@ -185,7 +185,7 @@ const KafkaConsume: React.FC<KafkaConsumeProps> = ({ clusterName, topicName }) =
         />
       </Box>
 
-      <Box sx={{ flex: 1, overflow: 'auto', bgcolor: 'grey.50', borderRadius: 1, p: 1 }}>
+      <Box sx={{ flex: 1, overflow: 'auto', bgcolor: 'background.default', borderRadius: 1, p: 1, border: '1px solid', borderColor: 'divider' }}>
         {events.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>
             No events yet. Click "Start Consuming" to begin streaming messages.

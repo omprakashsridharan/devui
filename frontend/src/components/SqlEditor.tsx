@@ -473,7 +473,7 @@ const SqlEditor = () => {
                                 key={`filter-${index}`}
                                 sx={{
                                   padding: 1,
-                                  backgroundColor: 'grey.100',
+                                  backgroundColor: 'background.paper',
                                   borderBottom: '1px solid',
                                   borderColor: 'divider',
                                   minWidth: 200,
@@ -490,7 +490,7 @@ const SqlEditor = () => {
                                   InputProps={{
                                     startAdornment: (
                                       <InputAdornment position="start">
-                                        <SearchIcon fontSize="small" />
+                                        <SearchIcon fontSize="small" color="inherit" />
                                       </InputAdornment>
                                     ),
                                   }}
@@ -498,9 +498,27 @@ const SqlEditor = () => {
                                     '& .MuiOutlinedInput-root': {
                                       fontSize: '0.75rem',
                                       height: '32px',
+                                      color: 'text.primary',
+                                      backgroundColor: 'background.default',
+                                      '& .MuiOutlinedInput-notchedOutline': {
+                                        borderColor: 'divider',
+                                      },
+                                      '&:hover .MuiOutlinedInput-notchedOutline': {
+                                        borderColor: 'text.secondary',
+                                      },
+                                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                        borderColor: 'primary.main',
+                                      },
                                     },
                                     '& .MuiInputBase-input': {
                                       padding: '6px 8px',
+                                      '::placeholder': {
+                                        color: 'text.secondary',
+                                        opacity: 1,
+                                      },
+                                    },
+                                    '& .MuiInputAdornment-root svg': {
+                                      color: 'text.secondary',
                                     },
                                   }}
                                 />
