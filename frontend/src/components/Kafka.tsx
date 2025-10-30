@@ -24,6 +24,7 @@ import {
 } from '@mui/icons-material';
 import {kafkaService, type KafkaClusterMetadata,} from '../services/kafkaService';
 import KafkaProduce from './KafkaProduce';
+import KafkaConsume from './KafkaConsume';
 
 const Kafka: React.FC = () => {
     const [clusters, setClusters] = useState<string[]>([]);
@@ -35,6 +36,7 @@ const Kafka: React.FC = () => {
     const [metadataError, setMetadataError] = useState<string | null>(null);
     const [brokersExpanded, setBrokersExpanded] = useState(false);
     const [selectedTopic, setSelectedTopic] = useState<string>('');
+    const [consumerKey, setConsumerKey] = useState<string>(''); // Force consumer remount when topic changes
 
     // Fetch clusters on component mount
     useEffect(() => {
@@ -85,6 +87,14 @@ const Kafka: React.FC = () => {
         setBrokersExpanded(!brokersExpanded);
     };
 
+    const handleTopicSelect = (topicName: string) => {
+        if (selectedTopic !== topicName) {
+            setSelectedTopic(topicName);
+            // Force consumer to remount by changing key, which will stop any active consumer
+            setConsumerKey(`${selectedCluster}-${topicName}-${Date.now()}`);
+        }
+    };
+
     if (loadingClusters) {
         return (
             <Box sx={{p: 2}}>
@@ -132,7 +142,7 @@ const Kafka: React.FC = () => {
         <Box sx={{p: 1, height: 'calc(100vh - 120px)'}}>
             <Box sx={{display: 'flex', gap: 2, height: '100%'}}>
                 {/* Left Panel - Cluster and Topics */}
-                <Box sx={{flex: selectedTopic ? '0 0 50%' : '1', transition: 'flex 0.3s ease'}}>
+                <Box sx={{flex: selectedTopic ? '0 0 30%' : '1', transition: 'flex 0.3s ease'}}>
                     {/* Cluster Tabs */}
                     <Paper sx={{height: '100%', display: 'flex', flexDirection: 'column'}}>
                         <Box sx={{borderBottom: 1, borderColor: 'divider'}}>
@@ -281,21 +291,34 @@ const Kafka: React.FC = () => {
                                                                 py: 0.5,
                                                                 px: 2,
                                                                 cursor: 'pointer',
-                                                                backgroundColor: selectedTopic === topic.name ? 'action.selected' : 'transparent',
+                                                                backgroundColor: selectedTopic === topic.name ? 'primary.main' : 'transparent',
+                                                                color: selectedTopic === topic.name ? 'primary.contrastText' : 'inherit',
+                                                                borderLeft: selectedTopic === topic.name ? 4 : 0,
+                                                                borderLeftColor: 'primary.dark',
                                                                 '&:hover': {
-                                                                    backgroundColor: 'action.hover',
+                                                                    backgroundColor: selectedTopic === topic.name ? 'primary.dark' : 'action.hover',
                                                                 },
+                                                                transition: 'all 0.2s ease',
                                                             }}
-                                                            onClick={() => setSelectedTopic(topic.name)}
+                                                            onClick={() => handleTopicSelect(topic.name)}
                                                         >
                                                             <ListItemIcon sx={{minWidth: 32}}>
-                                                                <TopicIcon color="primary" sx={{fontSize: 18}}/>
+                                                                <TopicIcon
+                                                                    color={selectedTopic === topic.name ? 'inherit' : 'primary'}
+                                                                    sx={{fontSize: 18}}
+                                                                />
                                                             </ListItemIcon>
                                                             <ListItemText
                                                                 primary={topic.name}
                                                                 secondary={`${topic.partitions.length} partition(s)`}
-                                                                primaryTypographyProps={{fontSize: '0.85rem'}}
-                                                                secondaryTypographyProps={{fontSize: '0.7rem'}}
+                                                                primaryTypographyProps={{
+                                                                    fontSize: '0.85rem',
+                                                                    fontWeight: selectedTopic === topic.name ? 'bold' : 'normal'
+                                                                }}
+                                                                secondaryTypographyProps={{
+                                                                    fontSize: '0.7rem',
+                                                                    color: selectedTopic === topic.name ? 'rgba(255,255,255,0.7)' : 'text.secondary'
+                                                                }}
                                                             />
                                                         </ListItem>
                                                         {index < clusterMetadata.topics.length - 1 && <Divider/>}
@@ -310,13 +333,41 @@ const Kafka: React.FC = () => {
                     </Paper>
                 </Box>
 
-                {/* Right Panel - Produce UI */}
+                {/* Right Panel - Producer and Consumer Side by Side */}
                 {selectedTopic && (
-                    <Box sx={{flex: '0 0 50%', transition: 'flex 0.3s ease'}}>
-                        <KafkaProduce
-                            clusterName={selectedCluster}
-                            topicName={selectedTopic}
-                        />
+                    <Box sx={{flex: '1', transition: 'flex 0.3s ease', display: 'flex', flexDirection: 'column', minHeight: 0}}>
+                        {/* Active Topic Header */}
+                        <Paper sx={{ p: 2, mb: 2, bgcolor: 'primary.main', color: 'primary.contrastText' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <TopicIcon />
+                                <Typography variant="h6" component="h2">
+                                  Active Topic: {selectedTopic}
+                                </Typography>
+                                <Typography variant="body2" sx={{ ml: 'auto', opacity: 0.8 }}>
+                                  Cluster: {selectedCluster}
+                                </Typography>
+                            </Box>
+                        </Paper>
+
+                        {/* Producer and Consumer Panels */}
+                        <Box sx={{ display: 'flex', gap: 2, flex: 1, minHeight: 0 }}>
+                            {/* Producer */}
+                            <Box sx={{flex: '1', minHeight: 0}}>
+                                <KafkaProduce
+                                    clusterName={selectedCluster}
+                                    topicName={selectedTopic}
+                                />
+                            </Box>
+
+                            {/* Consumer */}
+                            <Box sx={{flex: '1', minHeight: 0}}>
+                                <KafkaConsume
+                                    key={consumerKey}
+                                    clusterName={selectedCluster}
+                                    topicName={selectedTopic}
+                                />
+                            </Box>
+                        </Box>
                     </Box>
                 )}
             </Box>
