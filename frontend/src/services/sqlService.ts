@@ -123,6 +123,11 @@ export class SqlService {
       is_primary_key: boolean;
       default_value: string | null;
       enum_values?: string[] | null;
+      foreign_key?: {
+        referenced_table: string;
+        referenced_schema: string;
+        referenced_column: string;
+      } | null;
     }>;
   }>> {
     try {
@@ -136,6 +141,11 @@ export class SqlService {
           is_primary_key: boolean;
           default_value: string | null;
           enum_values?: string[] | null;
+          foreign_key?: {
+            referenced_table: string;
+            referenced_schema: string;
+            referenced_column: string;
+          } | null;
         }>;
       }>>(`/services/sql/connections/${connectionId}/tables`);
       return response;
@@ -168,6 +178,11 @@ export class SqlService {
       is_primary_key: boolean;
       default_value: string | null;
       enum_values?: string[] | null;
+      foreign_key?: {
+        referenced_table: string;
+        referenced_schema: string;
+        referenced_column: string;
+      } | null;
     }>;
   }> {
     try {
@@ -210,6 +225,11 @@ export class SqlService {
           is_primary_key: boolean;
           default_value: string | null;
           enum_values?: string[] | null;
+          foreign_key?: {
+            referenced_table: string;
+            referenced_schema: string;
+            referenced_column: string;
+          } | null;
         }>;
       }>(url);
 

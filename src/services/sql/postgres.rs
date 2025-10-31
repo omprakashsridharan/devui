@@ -3,7 +3,7 @@ use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
 use crate::services::sql::field_decoder::FieldDecoder;
 use crate::services::sql::filter_handler::FilterHandler;
-use crate::services::sql::models::{ColumnInfo, TableData, TableInfo, TableRow};
+use crate::services::sql::models::{ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Column, Pool, Postgres, Row};
 use std::collections::{HashMap, HashSet};
@@ -102,7 +102,10 @@ impl PostgresConnectionPool {
                 c.udt_name,
                 c.is_nullable,
                 c.column_default,
-                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key
+                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
+                fk.referenced_table_schema,
+                fk.referenced_table_name,
+                fk.referenced_column_name
             FROM information_schema.columns c
             LEFT JOIN (
                 SELECT ku.table_name, ku.column_name, ku.table_schema
@@ -112,6 +115,25 @@ impl PostgresConnectionPool {
             ) pk ON c.table_name = pk.table_name
                 AND c.column_name = pk.column_name
                 AND c.table_schema = pk.table_schema
+            LEFT JOIN (
+                SELECT
+                    kcu.column_name,
+                    kcu.table_name,
+                    kcu.table_schema,
+                    ccu.table_schema AS referenced_table_schema,
+                    ccu.table_name AS referenced_table_name,
+                    ccu.column_name AS referenced_column_name
+                FROM information_schema.table_constraints AS tc
+                JOIN information_schema.key_column_usage AS kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema
+                JOIN information_schema.constraint_column_usage AS ccu
+                    ON ccu.constraint_name = tc.constraint_name
+                    AND ccu.table_schema = tc.table_schema
+                WHERE tc.constraint_type = 'FOREIGN KEY'
+            ) fk ON c.table_name = fk.table_name
+                AND c.column_name = fk.column_name
+                AND c.table_schema = fk.table_schema
             WHERE c.table_name = '{}'
             {}
             ORDER BY c.ordinal_position
@@ -136,6 +158,9 @@ impl PostgresConnectionPool {
             let is_nullable: String = row.get("is_nullable");
             let column_default: Option<String> = row.get("column_default");
             let is_primary_key: bool = row.get("is_primary_key");
+            let referenced_table_schema: Option<String> = row.get("referenced_table_schema");
+            let referenced_table_name: Option<String> = row.get("referenced_table_name");
+            let referenced_column_name: Option<String> = row.get("referenced_column_name");
 
             // Fetch enum values if this is a USER-DEFINED type
             let enum_values = if data_type == "USER-DEFINED" {
@@ -150,6 +175,21 @@ impl PostgresConnectionPool {
                 None
             };
 
+            // Build foreign key info if present
+            let foreign_key = if let (Some(ref_table), Some(ref_schema), Some(ref_col)) = (
+                referenced_table_name,
+                referenced_table_schema,
+                referenced_column_name,
+            ) {
+                Some(ForeignKeyInfo {
+                    referenced_table: ref_table,
+                    referenced_schema: ref_schema,
+                    referenced_column: ref_col,
+                })
+            } else {
+                None
+            };
+
             columns.push(ColumnInfo {
                 name: column_name,
                 data_type,
@@ -157,6 +197,7 @@ impl PostgresConnectionPool {
                 is_primary_key,
                 default_value: column_default,
                 enum_values,
+                foreign_key,
             });
         }
 
@@ -232,7 +273,10 @@ impl ConnectionPool for PostgresConnectionPool {
                     c.udt_name,
                     c.is_nullable,
                     c.column_default,
-                    CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key
+                    CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
+                    fk.referenced_table_schema,
+                    fk.referenced_table_name,
+                    fk.referenced_column_name
                 FROM information_schema.tables t
                 LEFT JOIN information_schema.columns c ON t.table_name = c.table_name AND t.table_schema = c.table_schema
                 LEFT JOIN (
@@ -241,6 +285,25 @@ impl ConnectionPool for PostgresConnectionPool {
                     JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name
                     WHERE tc.constraint_type = 'PRIMARY KEY'
                 ) pk ON c.table_name = pk.table_name AND c.column_name = pk.column_name AND c.table_schema = pk.table_schema
+                LEFT JOIN (
+                    SELECT
+                        kcu.column_name,
+                        kcu.table_name,
+                        kcu.table_schema,
+                        ccu.table_schema AS referenced_table_schema,
+                        ccu.table_name AS referenced_table_name,
+                        ccu.column_name AS referenced_column_name
+                    FROM information_schema.table_constraints AS tc
+                    JOIN information_schema.key_column_usage AS kcu
+                        ON tc.constraint_name = kcu.constraint_name
+                        AND tc.table_schema = kcu.table_schema
+                    JOIN information_schema.constraint_column_usage AS ccu
+                        ON ccu.constraint_name = tc.constraint_name
+                        AND ccu.table_schema = tc.table_schema
+                    WHERE tc.constraint_type = 'FOREIGN KEY'
+                ) fk ON c.table_name = fk.table_name
+                    AND c.column_name = fk.column_name
+                    AND c.table_schema = fk.table_schema
                 WHERE t.table_schema NOT IN ('information_schema', 'pg_catalog')
                 ORDER BY t.table_schema, t.table_name, c.ordinal_position
             "#;
@@ -279,6 +342,9 @@ impl ConnectionPool for PostgresConnectionPool {
                 let is_nullable: String = row.get("is_nullable");
                 let column_default: Option<String> = row.get("column_default");
                 let is_primary_key: bool = row.get("is_primary_key");
+                let referenced_table_schema: Option<String> = row.get("referenced_table_schema");
+                let referenced_table_name: Option<String> = row.get("referenced_table_name");
+                let referenced_column_name: Option<String> = row.get("referenced_column_name");
 
                 // Fetch enum values if this is a USER-DEFINED type
                 let enum_values = if data_type == "USER-DEFINED" {
@@ -293,6 +359,21 @@ impl ConnectionPool for PostgresConnectionPool {
                     None
                 };
 
+                // Build foreign key info if present
+                let foreign_key = if let (Some(ref_table), Some(ref_schema), Some(ref_col)) = (
+                    referenced_table_name,
+                    referenced_table_schema,
+                    referenced_column_name,
+                ) {
+                    Some(ForeignKeyInfo {
+                        referenced_table: ref_table,
+                        referenced_schema: ref_schema,
+                        referenced_column: ref_col,
+                    })
+                } else {
+                    None
+                };
+
                 let column_info = ColumnInfo {
                     name: column_name,
                     data_type,
@@ -300,6 +381,7 @@ impl ConnectionPool for PostgresConnectionPool {
                     is_primary_key,
                     default_value: column_default,
                     enum_values,
+                    foreign_key,
                 };
 
                 tables

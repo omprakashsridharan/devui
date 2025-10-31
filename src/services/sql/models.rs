@@ -18,6 +18,16 @@ pub struct ColumnInfo {
     pub default_value: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enum_values: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub foreign_key: Option<ForeignKeyInfo>,
+}
+
+/// Foreign key relationship information
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ForeignKeyInfo {
+    pub referenced_table: String,
+    pub referenced_schema: String,
+    pub referenced_column: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]

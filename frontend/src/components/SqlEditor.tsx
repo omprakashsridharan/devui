@@ -40,6 +40,7 @@ import {
   ExpandLess as ExpandLessIcon,
   Visibility as ShowDataIcon,
   Search as SearchIcon,
+  Link as LinkIcon,
 } from '@mui/icons-material';
 import { sqlService, type SqlConnection } from '../services/sqlService';
 
@@ -53,6 +54,11 @@ interface Table {
     is_primary_key: boolean;
     default_value: string | null;
     enum_values?: string[] | null;
+    foreign_key?: {
+      referenced_table: string;
+      referenced_schema: string;
+      referenced_column: string;
+    } | null;
   }>;
 }
 
@@ -75,6 +81,11 @@ const SqlEditor = () => {
       is_primary_key: boolean;
       default_value: string | null;
       enum_values?: string[] | null;
+      foreign_key?: {
+        referenced_table: string;
+        referenced_schema: string;
+        referenced_column: string;
+      } | null;
     }>;
   } | null>(null);
   const [loadingTableData, setLoadingTableData] = useState(false);
@@ -83,6 +94,12 @@ const SqlEditor = () => {
   const [tableDataError, setTableDataError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [foreignKeyFilter, setForeignKeyFilter] = useState<{
+    column: string;
+    value: string;
+    referencedTable: string;
+    referencedSchema: string;
+  } | null>(null);
 
   const loadConnections = async () => {
     try {
@@ -176,13 +193,23 @@ const SqlEditor = () => {
       setTableData(null); // Clear previous data immediately
       setCurrentTableName(tableName);
 
+      // Clear foreign key filter if switching to a different table
+      // or if filters are explicitly cleared (empty object passed)
+      const filtersToUse = appliedFilters ?? filters;
+      if (tableName !== foreignKeyFilter?.referencedTable) {
+        setForeignKeyFilter(null);
+      } else if (appliedFilters !== undefined && Object.keys(appliedFilters).length === 0) {
+        // Only clear if explicitly cleared (not just using empty filters state)
+        setForeignKeyFilter(null);
+      }
+
       const connectionId = getConnectionId(selectedConnection);
       const currentPage = pageNum ?? page;
       const currentPageSize = pageSizeNum ?? pageSize;
       const data = await sqlService.getTableData(
         connectionId,
         tableName,
-        appliedFilters || filters,
+        filtersToUse,
         currentPage,
         currentPageSize
       );
@@ -214,6 +241,7 @@ const SqlEditor = () => {
   // Clear filters
   const clearFilters = () => {
     setFilters({});
+    setForeignKeyFilter(null); // Clear foreign key filter indication
     setTableDataError(null); // Clear any errors when clearing filters
     setPage(1); // Reset to first page when clearing filters
     if (currentTableName) {
@@ -236,6 +264,40 @@ const SqlEditor = () => {
     setPage(1); // Reset to first page when changing page size
     if (currentTableName) {
       loadTableData(currentTableName, filters, 1, newPageSize);
+    }
+  };
+
+  // Navigate to referenced table for foreign key values
+  const handleForeignKeyClick = (foreignKey: { referenced_table: string; referenced_schema: string; referenced_column: string }, value: string) => {
+    if (!value || value === 'null' || value === '') {
+      return;
+    }
+
+    // Load the referenced table
+    const referencedTable = foreignKey.referenced_table;
+    setPage(1);
+    // Set filter to show the row with the matching foreign key value
+    const filtersForReferencedTable: Record<string, string> = {
+      [foreignKey.referenced_column]: value,
+    };
+    // Update filters state so filter inputs show the foreign key filter value
+    setFilters(filtersForReferencedTable);
+    // Track foreign key filter for indication
+    setForeignKeyFilter({
+      column: foreignKey.referenced_column,
+      value: value,
+      referencedTable: referencedTable,
+      referencedSchema: foreignKey.referenced_schema,
+    });
+    loadTableData(referencedTable, filtersForReferencedTable, 1, pageSize);
+  };
+
+  // Clear foreign key filter
+  const clearForeignKeyFilter = () => {
+    setForeignKeyFilter(null);
+    setFilters({});
+    if (currentTableName) {
+      loadTableData(currentTableName, {}, 1, pageSize);
     }
   };
 
@@ -636,6 +698,9 @@ const SqlEditor = () => {
                                       {column.is_primary_key && (
                                         <Chip label="PK" size="small" color="primary" />
                                       )}
+                                      {column.foreign_key && (
+                                        <Chip label="FK" size="small" color="info" />
+                                      )}
                                       {!column.is_nullable && (
                                         <Chip label="NOT NULL" size="small" color="warning" />
                                       )}
@@ -644,6 +709,7 @@ const SqlEditor = () => {
                                   secondary={
                                     <Typography variant="caption" color="text.secondary">
                                       {column.data_type}
+                                      {column.foreign_key && ` • FK → ${column.foreign_key.referenced_schema}.${column.foreign_key.referenced_table}`}
                                       {column.default_value && ` • Default: ${column.default_value}`}
                                     </Typography>
                                   }
@@ -703,6 +769,34 @@ const SqlEditor = () => {
                   </Box>
                 </Box>
               </Box>
+              {/* Foreign Key Filter Indicator */}
+              {foreignKeyFilter && currentTableName === foreignKeyFilter.referencedTable && (
+                <Alert
+                  severity="info"
+                  icon={<LinkIcon />}
+                  action={
+                    <IconButton
+                      aria-label="clear foreign key filter"
+                      color="inherit"
+                      size="small"
+                      onClick={clearForeignKeyFilter}
+                    >
+                      <ClearIcon fontSize="inherit" />
+                    </IconButton>
+                  }
+                  sx={{ m: 2, flexShrink: 0 }}
+                >
+                  <Box>
+                    <Typography variant="body2" fontWeight="medium" gutterBottom>
+                      Filtered by Foreign Key Navigation
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Showing rows where <strong>{foreignKeyFilter.column}</strong> = <strong>{foreignKeyFilter.value}</strong>
+                      {' • '}Navigated from <strong>{foreignKeyFilter.referencedSchema}.{foreignKeyFilter.referencedTable}</strong>
+                    </Typography>
+                  </Box>
+                </Alert>
+              )}
 
               <Box sx={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 {loadingTableData ? (
@@ -783,6 +877,11 @@ const SqlEditor = () => {
                                                 Primary Key
                                               </Typography>
                                             )}
+                                            {columnInfo.foreign_key && (
+                                              <Typography variant="caption" display="block">
+                                                Foreign Key → {columnInfo.foreign_key.referenced_schema}.{columnInfo.foreign_key.referenced_table}({columnInfo.foreign_key.referenced_column})
+                                              </Typography>
+                                            )}
                                             {columnInfo.default_value && (
                                               <Typography variant="caption" display="block">
                                                 Default: {columnInfo.default_value}
@@ -815,6 +914,19 @@ const SqlEditor = () => {
                                               fontWeight: 'bold',
                                               backgroundColor: 'warning.main',
                                               color: 'warning.contrastText',
+                                            }}
+                                          />
+                                        )}
+                                        {columnInfo?.foreign_key && (
+                                          <Chip
+                                            label="FK"
+                                            size="small"
+                                            sx={{
+                                              height: 18,
+                                              fontSize: '0.65rem',
+                                              fontWeight: 'bold',
+                                              backgroundColor: 'info.main',
+                                              color: 'info.contrastText',
                                             }}
                                           />
                                         )}
@@ -905,63 +1017,103 @@ const SqlEditor = () => {
                           </TableRow>
                         </TableHead>
                         <TableBody>
-                          {tableData.data.map((row, index) => (
+                          {tableData.data.map((row, index) => {
+                            // Check if this row matches the foreign key filter
+                            const matchesForeignKeyFilter = foreignKeyFilter &&
+                              currentTableName === foreignKeyFilter.referencedTable &&
+                              row[foreignKeyFilter.column]?.toString() === foreignKeyFilter.value;
+
+                            return (
                             <TableRow
                               key={index}
                               sx={{
                                 '&:nth-of-type(odd)': {
-                                  backgroundColor: 'action.hover',
+                                  backgroundColor: matchesForeignKeyFilter
+                                    ? 'info.light'
+                                    : 'action.hover',
                                 },
                                 '&:hover': {
-                                  backgroundColor: 'action.selected',
+                                  backgroundColor: matchesForeignKeyFilter
+                                    ? 'info.main'
+                                    : 'action.selected',
                                 },
+                                ...(matchesForeignKeyFilter && {
+                                  borderLeft: '4px solid',
+                                  borderLeftColor: 'info.main',
+                                  backgroundColor: 'info.light',
+                                }),
                               }}
                             >
-                              {tableData.columns.map((column, colIndex) => (
-                                <TableCell
-                                  key={colIndex}
-                                  sx={{
-                                    borderBottom: '1px solid',
-                                    borderColor: 'divider',
-                                    minWidth: 200,
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                  }}
-                                >
-                                  {(() => {
-                                    const value = row[column];
-                                    if (value === null || value === undefined || value === '') {
-                                      return (
-                                        <Typography
-                                          variant="body2"
-                                          color="text.secondary"
-                                          sx={{ fontStyle: 'italic' }}
-                                        >
-                                          null
-                                        </Typography>
-                                      );
-                                    }
+                              {tableData.columns.map((column, colIndex) => {
+                                const columnInfo = tableData.column_info.find(col => col.name === column);
+                                const isForeignKey = !!columnInfo?.foreign_key;
+                                return (
+                                  <TableCell
+                                    key={colIndex}
+                                    sx={{
+                                      borderBottom: '1px solid',
+                                      borderColor: 'divider',
+                                      minWidth: 200,
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                    }}
+                                  >
+                                    {(() => {
+                                      const value = row[column];
+                                      if (value === null || value === undefined || value === '') {
+                                        return (
+                                          <Typography
+                                            variant="body2"
+                                            color="text.secondary"
+                                            sx={{ fontStyle: 'italic' }}
+                                          >
+                                            null
+                                          </Typography>
+                                        );
+                                      }
 
-                                    const stringValue = String(value);
-                                    if (stringValue.length > 50) {
+                                      const stringValue = String(value);
+                                      const displayValue = stringValue.length > 50 ? stringValue.substring(0, 50) + '...' : stringValue;
+
+                                      if (isForeignKey && columnInfo?.foreign_key) {
+                                        return (
+                                          <Tooltip
+                                            title={`Click to view ${columnInfo.foreign_key.referenced_schema}.${columnInfo.foreign_key.referenced_table}`}
+                                            arrow
+                                          >
+                                            <Typography
+                                              variant="body2"
+                                              onClick={() => handleForeignKeyClick(columnInfo.foreign_key!, stringValue)}
+                                              sx={{
+                                                color: 'primary.main',
+                                                cursor: 'pointer',
+                                                textDecoration: 'underline',
+                                                '&:hover': {
+                                                  color: 'primary.dark',
+                                                  textDecoration: 'underline',
+                                                },
+                                              }}
+                                              title={stringValue}
+                                            >
+                                              {displayValue}
+                                            </Typography>
+                                          </Tooltip>
+                                        );
+                                      }
+
                                       return (
                                         <Typography variant="body2" title={stringValue}>
-                                          {stringValue.substring(0, 50)}...
+                                          {displayValue}
                                         </Typography>
                                       );
-                                    }
-
-                                    return (
-                                      <Typography variant="body2" title={stringValue}>
-                                        {stringValue}
-                                      </Typography>
-                                    );
-                                  })()}
-                                </TableCell>
-                              ))}
+                                    })()}
+                                  </TableCell>
+                                );
+                              })}
                             </TableRow>
-                          ))}
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     </TableContainer>
