@@ -19,11 +19,49 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for git describe
 
+      - name: Extract version from git tag or input
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            # Extract version from release tag (remove 'v' prefix if present)
+            TAG_NAME="${{ github.event.release.tag_name }}"
+            VERSION="${TAG_NAME#v}"
+            echo "Extracted version from release tag: $VERSION"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Use provided version input
+            VERSION="${{ github.event.inputs.version }}"
+            echo "Using version from workflow input: $VERSION"
+          else
+            # Try to get version from git tag (fallback)
+            TAG_NAME=$(git describe --tags --exact-match HEAD 2>/dev/null || echo "")
+            if [ -n "$TAG_NAME" ]; then
+              VERSION="${TAG_NAME#v}"
+              echo "Extracted version from git tag: $VERSION"
+            else
+              echo "Error: Could not determine version"
+              exit 1
+            fi
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
+
+      - name: Update version in Cargo.toml
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          echo "Updated Cargo.toml version to: $VERSION"
+          grep "^version" Cargo.toml
+
+      # Parallel setup of Rust and Node.js
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
@@ -36,6 +74,19 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
+      # Optimized Rust caching using Swatinem/rust-cache
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '.'
+          cache-on-failure: true
+
+      - name: Configure Rust build parallelism
+        run: |
+          # Use all available CPU cores for faster builds
+          echo "CARGO_BUILD_JOBS=$(nproc)" >> $GITHUB_ENV
+
+      # Build frontend in parallel with Rust operations
       - name: Build frontend
         working-directory: ./frontend
         run: |
@@ -55,25 +106,6 @@ jobs:
           fi
           echo "Frontend build verified: frontend/dist/index.html exists"
 
-      - name: Cache cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Update version in Cargo.toml (if workflow_dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          VERSION="${{ github.event.inputs.version }}"
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
-
       - name: Verify Cargo.toml and frontend files
         run: |
           # Verify frontend files exist before running cargo check
@@ -81,17 +113,21 @@ jobs:
             echo "Error: frontend/dist/index.html must exist before compilation"
             exit 1
           fi
+          # Quick syntax check (fast, uses incremental compilation)
           cargo check --manifest-path Cargo.toml
 
-      - name: Run tests
-        run: cargo test --verbose --release
-
-      - name: Build release
-        run: cargo build --release
+      - name: Run tests and build (release mode)
+        run: |
+          # Build and test in release mode (build output will be reused)
+          # Using --jobs to utilize all available cores
+          cargo test --release --verbose
+          # Build release artifacts (fast due to incremental compilation from tests)
+          cargo build --release
 
       - name: Prepare for publish
         run: |
-          cargo package --list
+          # List package contents (validates package structure)
+          cargo package --list --allow-dirty
 
       - name: Publish to Crates.io
         env:
@@ -102,7 +138,7 @@ jobs:
       - name: Create Git tag (if not exists)
         if: github.event_name == 'workflow_dispatch'
         run: |
-          VERSION="${{ github.event.inputs.version }}"
+          VERSION="${{ steps.get_version.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "v${VERSION}" -m "Release version ${VERSION}"
@@ -118,5 +154,5 @@ jobs:
         run: |
           echo "✅ Successfully published to crates.io"
           echo "Package: devui"
-          echo "Version: $(grep '^version' Cargo.toml | cut -d '"' -f 2)"
+          echo "Version: ${{ needs.build-and-publish.outputs.version }}"
 

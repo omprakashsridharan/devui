@@ -1,6 +1,6 @@
 [package]
 name = "devui"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 description = "A comprehensive development tools UI library with PostgreSQL SQL management capabilities"
 authors = ["Your Name <your.email@example.com>"]
@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/yourusername/devui"
 homepage = "https://github.com/yourusername/devui"
 documentation = "https://docs.rs/devui"
-keywords = ["postgresql", "sql", "database", "admin", "dev-tools", "web-ui", "axum", "react"]
+keywords = ["admin", "dev-tools", "web-ui", "axum", "react"]
 categories = ["development-tools", "web-programming", "database"]
 readme = "README.md"
 exclude = [
