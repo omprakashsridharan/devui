@@ -80,12 +80,30 @@ The `DevUiLayer` middleware:
                        └──────────────────┘
 ```
 
-## Future Development Tools
+## Available Development Tools
+
+### PostgreSQL SQL Management
+
+**Comprehensive PostgreSQL database management** - Explore, query, and manage PostgreSQL databases with a rich set of features:
+
+- 🗄️ **Schema Exploration**: Automatic discovery of tables, columns, and relationships
+- 🔍 **Advanced Filtering**: Type-aware filters with support for all PostgreSQL data types
+- 🔗 **Foreign Key Navigation**: One-click navigation through foreign key relationships
+- 📄 **Pagination**: Efficient server-side pagination for large datasets
+- 🎨 **Modern UI**: Responsive interface with rich metadata display
+
+📖 **[See full PostgreSQL features documentation](SQL_POSTGRES_FEATURES.md)**
+
+### Kafka Management
+
+- **Kafka UI**: Monitor Kafka topics and messages
+- **Produce/Consume**: Test message production and consumption
+- **Cluster Management**: Manage Kafka cluster configurations
+
+### Future Development Tools
 
 The interface is designed to be extensible with tools like:
 
-- **SQL Editor**: Query and manage databases
-- **Kafka UI**: Monitor Kafka topics and messages
 - **API Explorer**: Test and explore API endpoints
 - **Log Viewer**: View and search application logs
 - **Metrics Dashboard**: Monitor application performance
