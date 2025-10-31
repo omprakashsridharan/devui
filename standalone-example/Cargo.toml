@@ -1,0 +1,15 @@
+[package]
+name = "devui-example"
+version = "0.1.0"
+edition = "2021"
+description = "Standalone example using devui from cargo registry"
+
+[dependencies]
+axum = "0.8.6"
+tokio = { version = "1.0", features = ["full"] }
+tower-http = { version = "0.6.6", features = ["trace", "fs", "cors"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+# Use devui from cargo registry (not from local workspace)
+devui = "0.0.1"
+

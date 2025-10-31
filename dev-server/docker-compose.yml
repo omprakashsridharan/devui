@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: devui-postgres-dev
+    environment:
+      POSTGRES_USER: devui_user
+      POSTGRES_PASSWORD: devui_password
+      POSTGRES_DB: devui_sample_db
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devui_user -d devui_sample_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - devui-network
+
+volumes:
+  postgres_data:
+
+networks:
+  devui-network:
+    driver: bridge
+

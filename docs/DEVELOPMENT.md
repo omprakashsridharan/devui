@@ -22,14 +22,35 @@ make dev
 make frontend-dev
 ```
 
-### Option 3: Backend Development Only
+### Option 3: Backend Development Only (Using Published Package)
 ```bash
 # Install cargo-watch if you haven't already
 cargo install cargo-watch
 
 # Start Rust development server with hot reloading
-cargo watch -x "run --example axum_server"
+cd standalone-example && cargo watch -x "run"
 ```
+
+### Option 4: Local Development Server (Using Workspace Library)
+```bash
+# Build frontend first (required)
+cd frontend
+npm install
+npm run build
+cd ..
+
+# Run development server using local library code
+cd dev-server
+cargo run
+
+# Or with hot reloading
+cargo install cargo-watch
+cargo watch -x "run"
+```
+
+**When to use `dev-server` vs `standalone-example`:**
+- **`dev-server`**: Use when developing the library itself. It uses the local workspace code (`devui = { path = ".." }`), so your changes are immediately available.
+- **`standalone-example`**: Use when testing the published package. It uses `devui` from crates.io (`devui = "0.0.1"`), simulating how users would use the library.
 
 ## 🛠️ Development Tools
 
@@ -44,12 +65,22 @@ make frontend-dev
 ```
 
 ### 2. Backend Development (Rust + Cargo Watch)
-Automatically rebuilds and restarts the server when files change:
 
+#### Using Published Package (standalone-example)
 ```bash
 cargo install cargo-watch
-cargo watch -x "run --example axum_server"
+cd standalone-example && cargo watch -x "run"
 ```
+
+#### Using Local Library Code (dev-server)
+```bash
+cargo install cargo-watch
+cd dev-server && cargo watch -x "run"
+```
+
+This automatically rebuilds and restarts when you change:
+- Library code in `../src/`
+- Dev server code in `dev-server/src/`
 
 ### 3. Development Scripts
 
@@ -75,7 +106,7 @@ The `.cargo-watch.toml` file configures what to watch:
 
 ```toml
 [watch]
-paths = ["src", "examples", "Cargo.toml", "Cargo.lock"]
+paths = ["src", "standalone-example/src", "Cargo.toml", "Cargo.lock"]
 ignore = ["target/**", ".git/**", "*.tmp", "*.log", "frontend/**"]
 delay = 0.5
 clear = true
@@ -99,9 +130,9 @@ make dev
 Edit any file:
 - `frontend/src/components/` - React components
 - `frontend/src/App.tsx` - Main React app
-- `src/middleware.rs` - Tower middleware
-- `src/layer.rs` - Tower layer
-- `examples/axum_server.rs` - Example server
+- `src/` - Library source code (use `dev-server` to test changes)
+- `dev-server/src/main.rs` - Development server code
+- `standalone-example/src/main.rs` - Standalone example server (uses published package)
 
 ### 3. Automatic Reloading
 - **Frontend**: Vite hot module replacement updates instantly
@@ -113,22 +144,22 @@ Edit any file:
 ### Custom Watch Patterns
 ```bash
 # Watch only specific files
-cargo watch -x "run --example axum_server" --watch src/components/
+cd standalone-example && cargo watch -x "run" --watch src/
 
 # Watch with custom delay
-cargo watch -x "run --example axum_server" --delay 1.0
+cd standalone-example && cargo watch -x "run" --delay 1.0
 
 # Watch with custom shell command
-cargo watch --shell "cargo build && cargo run --example axum_server"
+cd standalone-example && cargo watch --shell "cargo build && cargo run"
 ```
 
 ### Environment Variables
 ```bash
 # Set custom port
-PORT=8080 cargo watch -x "run --example axum_server"
+cd standalone-example && PORT=8080 cargo watch -x "run"
 
 # Enable debug logging
-RUST_LOG=debug cargo watch -x "run --example axum_server"
+cd standalone-example && RUST_LOG=debug cargo watch -x "run"
 ```
 
 ## 🐛 Troubleshooting
@@ -138,7 +169,7 @@ RUST_LOG=debug cargo watch -x "run --example axum_server"
 1. **Port already in use**
    ```bash
    # Kill existing processes
-   pkill -f "axum_server"
+   pkill -f "devui-example"
    ```
 
 2. **cargo-watch not found**
@@ -158,7 +189,7 @@ RUST_LOG=debug cargo watch -x "run --example axum_server"
 ### Debug Mode
 ```bash
 # Run with debug logging
-RUST_LOG=debug cargo watch -x "run --example axum_server"
+cd standalone-example && RUST_LOG=debug cargo watch -x "run"
 ```
 
 ## 📊 Performance Tips
@@ -172,13 +203,13 @@ RUST_LOG=debug cargo watch -x "run --example axum_server"
 2. **Optimize watch delay**
    ```bash
    # Faster restart (0.1s delay)
-   cargo watch --delay 0.1 -x "run --example axum_server"
+   cd standalone-example && cargo watch --delay 0.1 -x "run"
    ```
 
 3. **Use incremental builds**
    ```bash
    # Only rebuild changed parts
-   cargo watch -x "build" -x "run --example axum_server"
+   cd standalone-example && cargo watch -x "build" -x "run"
    ```
 
 ## 🔄 Integration with IDEs
@@ -222,8 +253,8 @@ Install the "Rust" extension and configure:
 Switch between modes:
 ```bash
 # Development
-cargo watch -x "run --example axum_server"
+cd standalone-example && cargo watch -x "run"
 
 # Production
-cargo run --example axum_server --release
+cd standalone-example && cargo run --release
 ```

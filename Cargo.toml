@@ -2,12 +2,12 @@
 name = "devui"
 version = "0.0.1"
 edition = "2021"
-description = "A comprehensive development tools UI library with PostgreSQL SQL management capabilities"
-authors = ["Your Name <your.email@example.com>"]
+description = "A comprehensive development tools UI library"
+authors = ["Omprakash Sridharan <omprakashsridharan@gmail.com>"]
 license = "MIT"
-repository = "https://github.com/yourusername/devui"
-homepage = "https://github.com/yourusername/devui"
-documentation = "https://docs.rs/devui"
+repository = "https://github.com/omprakashsridharan/devui"
+homepage = "https://github.com/omprakashsridharan/devui"
+documentation = "https://github.com/omprakashsridharan/devui/blob/main/README.md"
 keywords = ["admin", "dev-tools", "web-ui", "axum", "react"]
 categories = ["development-tools", "web-programming", "database"]
 readme = "README.md"
@@ -29,6 +29,14 @@ exclude = [
   "Makefile",
   "dev.sh",
   ".gitignore",
+  ".cursorrules"
+]
+include = [
+  "frontend/dist/**",
+  "Cargo.toml",
+  "LICENSE",
+  "README.md",
+  "src/**"
 ]
 
 [dependencies]
@@ -49,6 +57,8 @@ rdkafka = { version = "0.38", features = ["cmake-build"] }
 tokio-stream = "0.1.17"
 futures-util = "0.3.31"
 async-stream = "0.3.6"
+rust-embed = { version = "8.0", features = ["axum"] }
+bytes = "1.0"
 
 [dev-dependencies]
 cargo-watch = "8.5"

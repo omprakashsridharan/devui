@@ -1,0 +1,19 @@
+# Cargo-specific ignore file
+# This overrides .gitignore for packaging purposes
+
+# Ignore node_modules
+frontend/node_modules
+
+# Ignore source files
+frontend/src
+frontend/public
+frontend/index.html
+frontend/package.json
+frontend/package-lock.json
+frontend/tsconfig*.json
+frontend/vite.config.ts
+frontend/eslint.config.js
+
+# Allow frontend/dist - don't ignore it for packaging
+!frontend/dist
+
