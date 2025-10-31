@@ -7,6 +7,7 @@ import {
     Alert,
     List,
     ListItem,
+    ListItemButton,
     ListItemText,
     ListItemIcon,
     Divider,
@@ -199,31 +200,32 @@ const Kafka: React.FC = () => {
                                 <Box>
                                     {/* Brokers Expandable Section */}
                                     <ListItem
-                                        button
-                                        onClick={handleBrokersToggle}
                                         sx={{
                                             borderBottom: 1,
                                             borderColor: 'divider',
                                             backgroundColor: 'action.hover',
+                                            p: 0,
                                         }}
                                     >
-                                        <ListItemIcon>
-                                            <BrokerIcon color="primary"/>
-                                        </ListItemIcon>
-                                        <ListItemText
-                                            primary={`Brokers (${Object.keys(clusterMetadata.brokers).length})`}
-                                            primaryTypographyProps={{fontWeight: 'bold'}}
-                                        />
-                                        <IconButton size="small">
-                                            {brokersExpanded ? <ExpandLessIcon/> : <ExpandMoreIcon/>}
-                                        </IconButton>
+                                        <ListItemButton onClick={handleBrokersToggle}>
+                                            <ListItemIcon>
+                                                <BrokerIcon color="primary"/>
+                                            </ListItemIcon>
+                                            <ListItemText
+                                                primary={`Brokers (${Object.keys(clusterMetadata.brokers).length})`}
+                                                primaryTypographyProps={{fontWeight: 'bold'}}
+                                            />
+                                            <IconButton size="small">
+                                                {brokersExpanded ? <ExpandLessIcon/> : <ExpandMoreIcon/>}
+                                            </IconButton>
+                                        </ListItemButton>
                                     </ListItem>
 
                                     <Collapse in={brokersExpanded} timeout="auto" unmountOnExit>
                                         <Box sx={{p: 1, backgroundColor: 'grey.50'}}>
                                             <Grid container spacing={1}>
                                                 {Object.entries(clusterMetadata.brokers).map(([_, broker]) => (
-                                                    <Grid item xs={12} sm={6} md={4} key={broker.id}>
+                                                    <Grid size={{ xs: 12, sm: 6, md: 4 }} key={broker.id}>
                                                         <Card sx={{height: '100%'}}>
                                                             <CardContent sx={{p: 1}}>
                                                                 <Box sx={{

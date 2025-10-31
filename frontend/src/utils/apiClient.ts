@@ -7,13 +7,18 @@ import { API_CONFIG, getApiUrl } from '../config/api';
 
 // Custom error class for API errors
 export class ApiError extends Error {
+  public status: number;
+  public response?: any;
+  
   constructor(
     message: string,
-    public status: number,
-    public response?: any
+    status: number,
+    response?: any
   ) {
     super(message);
     this.name = 'ApiError';
+    this.status = status;
+    this.response = response;
   }
 }
 

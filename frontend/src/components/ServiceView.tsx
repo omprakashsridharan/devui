@@ -183,16 +183,12 @@ const ServiceView: React.FC = () => {
           </Box>
         </Box>
 
-        {service.description && (
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-            {service.description}
-          </Typography>
-        )}
+        {/* Description field removed - Service interface doesn't include description */}
 
         <Divider sx={{ my: 2 }} />
 
         <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardHeader title="Service Information" />
               <CardContent>
@@ -218,7 +214,7 @@ const ServiceView: React.FC = () => {
             </Card>
           </Grid>
 
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardHeader title="Quick Actions" />
               <CardContent>

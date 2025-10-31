@@ -27,7 +27,6 @@ import {
   Select,
   MenuItem,
   FormControl,
-  InputLabel,
   Pagination,
 } from '@mui/material';
 import {
@@ -250,7 +249,7 @@ const SqlEditor = () => {
   };
 
   // Handle page change
-  const handlePageChange = (_event: React.ChangeEvent<unknown>, value: number) => {
+  const handlePageChange = (_event: React.ChangeEvent<unknown> | React.MouseEvent<HTMLButtonElement> | null, value: number) => {
     setPage(value);
     if (currentTableName) {
       loadTableData(currentTableName, filters, value, pageSize);
@@ -258,12 +257,15 @@ const SqlEditor = () => {
   };
 
   // Handle page size change
-  const handlePageSizeChange = (event: any) => {
-    const newPageSize = parseInt(event.target.value, 10);
-    setPageSize(newPageSize);
-    setPage(1); // Reset to first page when changing page size
-    if (currentTableName) {
-      loadTableData(currentTableName, filters, 1, newPageSize);
+  const handlePageSizeChange = (event: { target: { value: number | string } }) => {
+    const value = event.target.value;
+    const newPageSize = typeof value === 'string' ? parseInt(value, 10) : value;
+    if (typeof newPageSize === 'number') {
+      setPageSize(newPageSize);
+      setPage(1); // Reset to first page when changing page size
+      if (currentTableName) {
+        loadTableData(currentTableName, filters, 1, newPageSize);
+      }
     }
   };
 
