@@ -1,6 +1,6 @@
 use hex;
 use sqlx::types::chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
-use sqlx::types::Json;
+use sqlx::types::{Json, Uuid};
 use sqlx::{Column, Row, TypeInfo};
 use tracing::warn;
 
@@ -208,8 +208,8 @@ impl FieldDecoder {
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: String = row.try_get(column_name)?;
-        Ok(value)
+        let value: Option<Uuid> = row.try_get(column_name)?;
+        Ok(value.map(|u| u.to_string()).unwrap_or_default())
     }
 
     // Array decoder (basic support)

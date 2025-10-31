@@ -1,3 +1,4 @@
 /target
 /standalone-example/target
+/standalone-example/Cargo.lock
 /dev-server/target

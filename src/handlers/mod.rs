@@ -14,13 +14,13 @@ pub struct DevUIService {
 
 pub async fn dev_ui_services(State(dev_ui_config): State<DevUIConfig>) -> Json<Vec<DevUIService>> {
     let mut services = Vec::new();
-    if let Some(sql_config) = dev_ui_config.sql_config {
+    if dev_ui_config.sql_config.is_some() {
         services.push(DevUIService {
             name: "SQL".to_string(),
             available: true,
         });
     }
-    if let Some(kafka_config) = dev_ui_config.kafka_config {
+    if dev_ui_config.kafka_config.is_some() {
         services.push(DevUIService {
             name: "Kafka".to_string(),
             available: true,
