@@ -86,54 +86,33 @@ jobs:
           # Use all available CPU cores for faster builds
           echo "CARGO_BUILD_JOBS=$(nproc)" >> $GITHUB_ENV
 
-      # Build frontend in parallel with Rust operations
+      # Build frontend (required for embedded assets)
       - name: Build frontend
         working-directory: ./frontend
         run: |
           npm ci
           npm run build
 
-      - name: Verify frontend build
+      # Build, test, and package in one step (cargo test builds the library)
+      - name: Build, test and package
         run: |
-          if [ ! -d "frontend/dist" ] || [ -z "$(ls -A frontend/dist)" ]; then
-            echo "Error: Frontend build directory is empty or missing"
-            exit 1
-          fi
+          # Verify frontend was built
           if [ ! -f "frontend/dist/index.html" ]; then
-            echo "Error: frontend/dist/index.html not found"
-            ls -la frontend/dist/
+            echo "Error: frontend/dist/index.html must exist for compilation"
             exit 1
           fi
-          echo "Frontend build verified: frontend/dist/index.html exists"
-
-      - name: Verify Cargo.toml and frontend files
-        run: |
-          # Verify frontend files exist before running cargo check
-          if [ ! -f "frontend/dist/index.html" ]; then
-            echo "Error: frontend/dist/index.html must exist before compilation"
-            exit 1
-          fi
-          # Quick syntax check (fast, uses incremental compilation)
-          cargo check --manifest-path Cargo.toml
-
-      - name: Run tests and build (release mode)
-        run: |
-          # Build and test in release mode (build output will be reused)
-          # Using --jobs to utilize all available cores
-          cargo test --release --verbose
-          # Build release artifacts (fast due to incremental compilation from tests)
-          cargo build --release
-
-      - name: Prepare for publish
-        run: |
-          # List package contents (validates package structure)
-          cargo package --list --allow-dirty
+          # Test and build in release mode (tests will compile the library)
+          cargo test --release
+          # Package validates structure and includes frontend/dist (publish will validate anyway)
+          cargo package --allow-dirty
 
       - name: Publish to Crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         run: |
-          cargo publish --token $CARGO_REGISTRY_TOKEN
+          # Publish with --allow-dirty since frontend/dist is built during workflow
+          # and Cargo.lock may have minor changes that don't affect the published crate
+          cargo publish --token $CARGO_REGISTRY_TOKEN --allow-dirty
 
       - name: Create Git tag (if not exists)
         if: github.event_name == 'workflow_dispatch'

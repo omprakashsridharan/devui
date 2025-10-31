@@ -11,32 +11,12 @@ documentation = "https://github.com/omprakashsridharan/devui/blob/main/README.md
 keywords = ["admin", "dev-tools", "web-ui", "axum", "react"]
 categories = ["development-tools", "web-programming", "database"]
 readme = "README.md"
-exclude = [
-  "frontend/node_modules",
-  "frontend/src",
-  "frontend/tsconfig*.json",
-  "frontend/vite.config.ts",
-  "frontend/index.html",
-  "frontend/package.json",
-  "frontend/package-lock.json",
-  "frontend/eslint.config.js",
-  "frontend/public",
-  ".github",
-  "docs",
-  "examples",
-  "*.md",
-  "!README.md",
-  "Makefile",
-  "dev.sh",
-  ".gitignore",
-  ".cursorrules"
-]
 include = [
-  "frontend/dist/**",
   "Cargo.toml",
   "LICENSE",
   "README.md",
-  "src/**"
+  "src/**",
+  "frontend/dist/**"
 ]
 
 [dependencies]
