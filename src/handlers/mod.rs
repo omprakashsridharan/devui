@@ -1,5 +1,4 @@
 pub mod kafka;
-pub mod spa;
 pub mod sql;
 
 use axum::Json;
