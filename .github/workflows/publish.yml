@@ -48,6 +48,12 @@ jobs:
             echo "Error: Frontend build directory is empty or missing"
             exit 1
           fi
+          if [ ! -f "frontend/dist/index.html" ]; then
+            echo "Error: frontend/dist/index.html not found"
+            ls -la frontend/dist/
+            exit 1
+          fi
+          echo "Frontend build verified: frontend/dist/index.html exists"
 
       - name: Cache cargo dependencies
         uses: actions/cache@v4
@@ -68,8 +74,13 @@ jobs:
           VERSION="${{ github.event.inputs.version }}"
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
 
-      - name: Verify Cargo.toml
+      - name: Verify Cargo.toml and frontend files
         run: |
+          # Verify frontend files exist before running cargo check
+          if [ ! -f "frontend/dist/index.html" ]; then
+            echo "Error: frontend/dist/index.html must exist before compilation"
+            exit 1
+          fi
           cargo check --manifest-path Cargo.toml
 
       - name: Run tests

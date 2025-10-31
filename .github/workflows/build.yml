@@ -60,6 +60,26 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
 
+      - name: Setup Node.js (for frontend build)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend (for include_str!)
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Verify frontend files exist
+        run: |
+          if [ ! -f "frontend/dist/index.html" ]; then
+            echo "Error: frontend/dist/index.html must exist for compilation"
+            exit 1
+          fi
+
       - name: Cache cargo dependencies
         uses: actions/cache@v4
         with:
@@ -74,7 +94,12 @@ jobs:
             ${{ runner.os }}-cargo-${{ matrix.toolchain }}-
 
       - name: Build library
-        run: cargo build --verbose --release
+        run: |
+          if [ ! -f "frontend/dist/index.html" ]; then
+            echo "Error: frontend/dist/index.html must exist for compilation"
+            exit 1
+          fi
+          cargo build --verbose --release
 
       - name: Run tests
         run: cargo test --verbose --release
