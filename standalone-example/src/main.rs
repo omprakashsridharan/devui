@@ -25,7 +25,7 @@ async fn main() {
         );
 
     let dev_ui_config = DevUIConfigBuilder::default()
-        .sql_config(sql_config)
+        .sql_config(Some(sql_config))
         .build()
         .expect("Error building dev ui config");
 
