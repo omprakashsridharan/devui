@@ -317,6 +317,8 @@ impl ConnectionPool for PostgresConnectionPool {
         &self,
         table_name: String,
         filters: Option<HashMap<String, String>>,
+        page: Option<u64>,
+        page_size: Option<u64>,
     ) -> Result<TableData, ConnectionPoolError> {
         // Fetch column information using the reusable method
         let columns = self.fetch_table_columns(&table_name, None).await?;
@@ -354,7 +356,10 @@ impl ConnectionPool for PostgresConnectionPool {
             query.push_str(&format!(" WHERE {}", where_clauses.join(" AND ")));
         }
 
-        query.push_str(" LIMIT 10");
+        // Handle pagination
+        let limit = page_size.unwrap_or(10);
+        let offset = page.map(|p| (p - 1) * limit).unwrap_or(0);
+        query.push_str(&format!(" LIMIT {} OFFSET {}", limit, offset));
 
         tracing::debug!("SQL query: {}", query);
 

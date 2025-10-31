@@ -52,13 +52,15 @@ impl Service {
         connection_name: String,
         table_name: String,
         filters: Option<std::collections::HashMap<String, String>>,
+        page: Option<u64>,
+        page_size: Option<u64>,
     ) -> Result<TableData, SqlServiceError> {
         let pool = self
             .connection_manager
             .get_connection(&connection_name)
             .map_err(SqlServiceError::ConnectionManagerError)?;
         let table_data = pool
-            .table_data(table_name, filters)
+            .table_data(table_name, filters, page, page_size)
             .await
             .map_err(SqlServiceError::ConnectionPoolError)?;
         Ok(table_data)

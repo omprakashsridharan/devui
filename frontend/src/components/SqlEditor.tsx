@@ -28,6 +28,7 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  Pagination,
 } from '@mui/material';
 import {
   Clear as ClearIcon,
@@ -80,6 +81,8 @@ const SqlEditor = () => {
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [currentTableName, setCurrentTableName] = useState<string | null>(null);
   const [tableDataError, setTableDataError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const loadConnections = async () => {
     try {
@@ -159,7 +162,12 @@ const SqlEditor = () => {
   };
 
   // Load table data
-  const loadTableData = async (tableName: string, appliedFilters?: Record<string, string>) => {
+  const loadTableData = async (
+    tableName: string,
+    appliedFilters?: Record<string, string>,
+    pageNum?: number,
+    pageSizeNum?: number
+  ) => {
     if (!selectedConnection) return;
 
     try {
@@ -169,8 +177,23 @@ const SqlEditor = () => {
       setCurrentTableName(tableName);
 
       const connectionId = getConnectionId(selectedConnection);
-      const data = await sqlService.getTableData(connectionId, tableName, appliedFilters || filters);
+      const currentPage = pageNum ?? page;
+      const currentPageSize = pageSizeNum ?? pageSize;
+      const data = await sqlService.getTableData(
+        connectionId,
+        tableName,
+        appliedFilters || filters,
+        currentPage,
+        currentPageSize
+      );
       setTableData(data);
+      // Update page state if explicitly provided
+      if (pageNum !== undefined) {
+        setPage(pageNum);
+      }
+      if (pageSizeNum !== undefined) {
+        setPageSize(pageSizeNum);
+      }
     } catch (error) {
       console.error('Failed to load table data:', error);
       setTableData(null); // Clear data on error
@@ -183,7 +206,8 @@ const SqlEditor = () => {
   // Apply filters
   const applyFilters = () => {
     if (currentTableName) {
-      loadTableData(currentTableName, filters);
+      setPage(1); // Reset to first page when applying filters
+      loadTableData(currentTableName, filters, 1, pageSize);
     }
   };
 
@@ -191,8 +215,27 @@ const SqlEditor = () => {
   const clearFilters = () => {
     setFilters({});
     setTableDataError(null); // Clear any errors when clearing filters
+    setPage(1); // Reset to first page when clearing filters
     if (currentTableName) {
-      loadTableData(currentTableName, {});
+      loadTableData(currentTableName, {}, 1, pageSize);
+    }
+  };
+
+  // Handle page change
+  const handlePageChange = (_event: React.ChangeEvent<unknown>, value: number) => {
+    setPage(value);
+    if (currentTableName) {
+      loadTableData(currentTableName, filters, value, pageSize);
+    }
+  };
+
+  // Handle page size change
+  const handlePageSizeChange = (event: any) => {
+    const newPageSize = parseInt(event.target.value, 10);
+    setPageSize(newPageSize);
+    setPage(1); // Reset to first page when changing page size
+    if (currentTableName) {
+      loadTableData(currentTableName, filters, 1, newPageSize);
     }
   };
 
@@ -458,7 +501,7 @@ const SqlEditor = () => {
   }
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
       <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
         <Typography variant="h5" gutterBottom>
@@ -495,9 +538,9 @@ const SqlEditor = () => {
         </Tabs>
       </Box>
 
-      <Box sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden' }}>
+      <Box sx={{ flex: '1 1 auto', minHeight: 0, display: 'flex', overflow: 'hidden' }}>
         {/* Sidebar */}
-        <Paper sx={{ width: 300, m: 2, display: 'flex', flexDirection: 'column' }}>
+        <Paper sx={{ width: 300, m: 2, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
           <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Typography variant="h6">
@@ -559,7 +602,8 @@ const SqlEditor = () => {
                               size="small"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                loadTableData(table.name);
+                                setPage(1); // Reset to first page when loading new table
+                                loadTableData(table.name, {}, 1, pageSize);
                               }}
                               sx={{
                                 color: 'primary.main',
@@ -618,17 +662,17 @@ const SqlEditor = () => {
         </Paper>
 
         {/* Main Content */}
-        <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', m: 2, overflow: 'hidden' }}>
+        <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column', m: 2, overflow: 'hidden' }}>
           {/* Table Data Display */}
           {(tableData || tableDataError || loadingTableData) && (
-            <Paper sx={{ mb: 2, flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <Paper sx={{ mb: 2, flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box>
                     <Typography variant="h6">Table Data</Typography>
                     {tableData && !tableDataError && (
                       <Typography variant="body2" color="text.secondary">
-                        Showing {tableData.data.length} of {tableData.total_rows.toLocaleString()} rows • {tableData.columns.length} columns
+                        Showing {((page - 1) * pageSize) + 1} - {Math.min(page * pageSize, tableData.total_rows)} of {tableData.total_rows.toLocaleString()} rows • {tableData.columns.length} columns • Page {page} of {Math.ceil(tableData.total_rows / pageSize) || 1}
                       </Typography>
                     )}
                     {tableDataError && (
@@ -660,7 +704,7 @@ const SqlEditor = () => {
                 </Box>
               </Box>
 
-              <Box sx={{ flexGrow: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <Box sx={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 {loadingTableData ? (
                   <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
                     <CircularProgress />
@@ -681,21 +725,26 @@ const SqlEditor = () => {
                   </Box>
                 ) : tableData ? (
                   <Box sx={{
-                    flexGrow: 1,
-                    overflow: 'auto',
+                    flex: '1 1 auto',
+                    minHeight: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
                     border: '1px solid',
                     borderColor: 'divider',
                     borderRadius: 1,
                     backgroundColor: 'background.paper',
-                    width: '100%',
-                    height: '100%'
+                    overflow: 'hidden'
                   }}>
-                    <TableContainer sx={{
-                      width: '100%',
-                      height: '100%',
-                      overflow: 'auto'
-                    }}>
-                      <Table size="small" sx={{ width: '100%' }}>
+                    <TableContainer
+                      component="div"
+                      sx={{
+                        flex: '1 1 0%',
+                        minHeight: 0,
+                        overflow: 'auto',
+                        position: 'relative'
+                      }}
+                    >
+                      <Table size="small" stickyHeader sx={{ width: '100%' }}>
                         <TableHead>
                           <TableRow>
                             {tableData.columns.map((column, index) => {
@@ -918,6 +967,59 @@ const SqlEditor = () => {
                     </TableContainer>
                   </Box>
                 ) : null}
+                {/* Pagination Controls */}
+                {tableData && !tableDataError && tableData.total_rows > 0 && (
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderTop: 1,
+                      borderColor: 'divider',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 2,
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        Rows per page:
+                      </Typography>
+                      <Select
+                        value={pageSize}
+                        onChange={handlePageSizeChange}
+                        size="small"
+                        sx={{
+                          minWidth: 80,
+                          height: 32,
+                          '& .MuiSelect-select': {
+                            py: '4px',
+                          },
+                        }}
+                      >
+                        <MenuItem value={10}>10</MenuItem>
+                        <MenuItem value={25}>25</MenuItem>
+                        <MenuItem value={50}>50</MenuItem>
+                        <MenuItem value={100}>100</MenuItem>
+                      </Select>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        {((page - 1) * pageSize) + 1} - {Math.min(page * pageSize, tableData.total_rows)} of {tableData.total_rows.toLocaleString()}
+                      </Typography>
+                      <Pagination
+                        count={Math.ceil(tableData.total_rows / pageSize) || 1}
+                        page={page}
+                        onChange={handlePageChange}
+                        color="primary"
+                        size="small"
+                        showFirstButton
+                        showLastButton
+                        disabled={loadingTableData}
+                      />
+                    </Box>
+                  </Box>
+                )}
               </Box>
             </Paper>
           )}

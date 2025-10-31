@@ -149,12 +149,14 @@ export class SqlService {
   }
 
   /**
-   * Get table data for a specific table with optional filters
+   * Get table data for a specific table with optional filters and pagination
    */
   async getTableData(
     connectionId: string,
     tableName: string,
-    filters?: Record<string, string>
+    filters?: Record<string, string>,
+    page?: number,
+    pageSize?: number
   ): Promise<{
     columns: string[];
     data: Record<string, unknown>[];
@@ -171,18 +173,28 @@ export class SqlService {
     try {
       let url = `/services/sql/connections/${connectionId}/tables/${tableName}`;
 
-      // Add query parameters if filters are provided
+      // Build query parameters
+      const searchParams = new URLSearchParams();
+
+      // Add filters
       if (filters && Object.keys(filters).length > 0) {
-        const searchParams = new URLSearchParams();
         Object.entries(filters).forEach(([key, value]) => {
           if (value && value.trim() !== '') {
             searchParams.append(key, value.trim());
           }
         });
+      }
 
-        if (searchParams.toString()) {
-          url += `?${searchParams.toString()}`;
-        }
+      // Add pagination parameters
+      if (page !== undefined && page > 0) {
+        searchParams.append('page', page.toString());
+      }
+      if (pageSize !== undefined && pageSize > 0) {
+        searchParams.append('page_size', pageSize.toString());
+      }
+
+      if (searchParams.toString()) {
+        url += `?${searchParams.toString()}`;
       }
 
       const response = await api.get<{

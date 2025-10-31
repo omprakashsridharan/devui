@@ -21,6 +21,8 @@ pub trait ConnectionPool: Send + Sync {
         &self,
         table_name: String,
         filters: Option<HashMap<String, String>>,
+        page: Option<u64>,
+        page_size: Option<u64>,
     ) -> Result<TableData, ConnectionPoolError>;
 
     async fn table_count(&self, table_name: String) -> Result<u64, ConnectionPoolError>;
