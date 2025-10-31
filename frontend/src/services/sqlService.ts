@@ -122,6 +122,7 @@ export class SqlService {
       is_nullable: boolean;
       is_primary_key: boolean;
       default_value: string | null;
+      enum_values?: string[] | null;
     }>;
   }>> {
     try {
@@ -134,6 +135,7 @@ export class SqlService {
           is_nullable: boolean;
           is_primary_key: boolean;
           default_value: string | null;
+          enum_values?: string[] | null;
         }>;
       }>>(`/services/sql/connections/${connectionId}/tables`);
       return response;
@@ -156,6 +158,15 @@ export class SqlService {
   ): Promise<{
     columns: string[];
     data: Record<string, unknown>[];
+    total_rows: number;
+    column_info: Array<{
+      name: string;
+      data_type: string;
+      is_nullable: boolean;
+      is_primary_key: boolean;
+      default_value: string | null;
+      enum_values?: string[] | null;
+    }>;
   }> {
     try {
       let url = `/services/sql/connections/${connectionId}/tables/${tableName}`;
@@ -174,21 +185,43 @@ export class SqlService {
         }
       }
 
-      const response = await api.get<Array<{
-        columns: string[];
-        data: Record<string, unknown>;
-      }>>(url);
+      const response = await api.get<{
+        rows: Array<{
+          columns: string[];
+          data: Record<string, string>;
+        }>;
+        total_rows: number;
+        columns: Array<{
+          name: string;
+          data_type: string;
+          is_nullable: boolean;
+          is_primary_key: boolean;
+          default_value: string | null;
+          enum_values?: string[] | null;
+        }>;
+      }>(url);
 
-      // Transform the response to match expected format
-      if (response.length > 0) {
-        const firstItem = response[0];
-        return {
-          columns: firstItem.columns,
-          data: response.map(item => item.data),
-        };
-      }
+      // Extract column names from the column_info in the correct order
+      const columnNames = response.columns.map(col => col.name);
 
-      return { columns: [], data: [] };
+      // Transform rows to the expected format
+      // Use the column order from column_info to ensure consistent ordering
+      const data = response.rows.map(row => {
+        const rowData: Record<string, unknown> = {};
+        // Use the ordered column names to preserve column order
+        columnNames.forEach(col => {
+          // Check if the column exists in row.data, otherwise set to null
+          rowData[col] = row.data[col] !== undefined ? row.data[col] : null;
+        });
+        return rowData;
+      });
+
+      return {
+        columns: columnNames,
+        data,
+        total_rows: response.total_rows,
+        column_info: response.columns,
+      };
     } catch (error) {
       if (error instanceof ApiError) {
         console.error('Failed to fetch table data:', error.message);

@@ -1,4 +1,4 @@
-use crate::services::sql::models::TableRow;
+use crate::services::sql::models::TableData;
 use crate::services::sql::router::SqlServiceState;
 use axum::extract::{Path, Query, State};
 use axum::Json;
@@ -9,7 +9,7 @@ pub async fn table_data(
     State(SqlServiceState(sql_service)): State<SqlServiceState>,
     Path((connection_name, table_name)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<Vec<TableRow>>, StatusCode> {
+) -> Result<Json<TableData>, StatusCode> {
     // Convert query parameters to filters HashMap
     let filters = if params.is_empty() {
         None

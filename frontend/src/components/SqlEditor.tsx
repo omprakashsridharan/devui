@@ -47,6 +47,7 @@ interface Table {
     is_nullable: boolean;
     is_primary_key: boolean;
     default_value: string | null;
+    enum_values?: string[] | null;
   }>;
 }
 
@@ -61,6 +62,15 @@ const SqlEditor = () => {
   const [tableData, setTableData] = useState<{
     columns: string[];
     data: Record<string, unknown>[];
+    total_rows: number;
+    column_info: Array<{
+      name: string;
+      data_type: string;
+      is_nullable: boolean;
+      is_primary_key: boolean;
+      default_value: string | null;
+      enum_values?: string[] | null;
+    }>;
   } | null>(null);
   const [loadingTableData, setLoadingTableData] = useState(false);
   const [filters, setFilters] = useState<Record<string, string>>({});
@@ -382,7 +392,7 @@ const SqlEditor = () => {
                     <Typography variant="h6">Table Data</Typography>
                     {tableData && !tableDataError && (
                       <Typography variant="body2" color="text.secondary">
-                        {tableData.data.length} rows • {tableData.columns.length} columns
+                        Showing {tableData.data.length} of {tableData.total_rows.toLocaleString()} rows • {tableData.columns.length} columns
                       </Typography>
                     )}
                     {tableDataError && (
@@ -440,90 +450,210 @@ const SqlEditor = () => {
                     border: '1px solid',
                     borderColor: 'divider',
                     borderRadius: 1,
-                    backgroundColor: 'background.paper'
+                    backgroundColor: 'background.paper',
+                    width: '100%',
+                    height: '100%'
                   }}>
                     <TableContainer sx={{
-                      minWidth: `${Math.max(tableData.columns.length * 200, 800)}px`,
-                      width: 'max-content'
+                      width: '100%',
+                      height: '100%',
+                      overflow: 'auto'
                     }}>
-                      <Table size="small" sx={{ minWidth: '100%' }}>
+                      <Table size="small" sx={{ width: '100%' }}>
                         <TableHead>
                           <TableRow>
-                            {tableData.columns.map((column, index) => (
-                              <TableCell
-                                key={index}
-                                sx={{
-                                  fontWeight: 'bold',
-                                  backgroundColor: 'primary.main',
-                                  color: 'primary.contrastText',
-                                  borderBottom: '2px solid',
-                                  borderColor: 'primary.dark',
-                                  minWidth: 200,
-                                  width: 200,
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {column}
-                              </TableCell>
-                            ))}
+                            {tableData.columns.map((column, index) => {
+                              const columnInfo = tableData.column_info.find(col => col.name === column);
+                              return (
+                                <TableCell
+                                  key={index}
+                                  sx={{
+                                    fontWeight: 'bold',
+                                    backgroundColor: 'primary.main',
+                                    color: 'primary.contrastText',
+                                    borderBottom: '2px solid',
+                                    borderColor: 'primary.dark',
+                                    minWidth: 200,
+                                    whiteSpace: 'normal',
+                                    verticalAlign: 'top',
+                                    py: 1.5,
+                                  }}
+                                >
+                                  <Tooltip
+                                    title={
+                                      <Box>
+                                        <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                                          {column}
+                                        </Typography>
+                                        {columnInfo && (
+                                          <>
+                                            <Typography variant="caption" display="block">
+                                              Type: {columnInfo.data_type}
+                                            </Typography>
+                                            <Typography variant="caption" display="block">
+                                              Nullable: {columnInfo.is_nullable ? 'Yes' : 'No'}
+                                            </Typography>
+                                            {columnInfo.is_primary_key && (
+                                              <Typography variant="caption" display="block">
+                                                Primary Key
+                                              </Typography>
+                                            )}
+                                            {columnInfo.default_value && (
+                                              <Typography variant="caption" display="block">
+                                                Default: {columnInfo.default_value}
+                                              </Typography>
+                                            )}
+                                            {columnInfo.enum_values && columnInfo.enum_values.length > 0 && (
+                                              <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                                                Enum Values: {columnInfo.enum_values.join(', ')}
+                                              </Typography>
+                                            )}
+                                          </>
+                                        )}
+                                      </Box>
+                                    }
+                                    arrow
+                                    placement="top"
+                                  >
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                                        <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                                          {column}
+                                        </Typography>
+                                        {columnInfo?.is_primary_key && (
+                                          <Chip
+                                            label="PK"
+                                            size="small"
+                                            sx={{
+                                              height: 18,
+                                              fontSize: '0.65rem',
+                                              fontWeight: 'bold',
+                                              backgroundColor: 'warning.main',
+                                              color: 'warning.contrastText',
+                                            }}
+                                          />
+                                        )}
+                                        {columnInfo && !columnInfo.is_nullable && (
+                                          <Chip
+                                            label="NOT NULL"
+                                            size="small"
+                                            sx={{
+                                              height: 18,
+                                              fontSize: '0.65rem',
+                                              backgroundColor: 'error.main',
+                                              color: 'error.contrastText',
+                                            }}
+                                          />
+                                        )}
+                                      </Box>
+                                      {columnInfo && (
+                                        <Typography
+                                          variant="caption"
+                                          sx={{
+                                            fontSize: '0.7rem',
+                                            opacity: 0.9,
+                                            fontFamily: 'monospace',
+                                            display: 'block',
+                                          }}
+                                        >
+                                          {columnInfo.data_type}
+                                        </Typography>
+                                      )}
+                                    </Box>
+                                  </Tooltip>
+                                </TableCell>
+                              );
+                            })}
                           </TableRow>
                           <TableRow>
-                            {tableData.columns.map((column, index) => (
-                              <TableCell
-                                key={`filter-${index}`}
-                                sx={{
-                                  padding: 1,
-                                  backgroundColor: 'background.paper',
-                                  borderBottom: '1px solid',
-                                  borderColor: 'divider',
-                                  minWidth: 200,
-                                  width: 200,
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                <TextField
-                                  fullWidth
-                                  size="small"
-                                  placeholder={`Filter ${column}`}
-                                  value={filters[column] || ''}
-                                  onChange={(e) => updateFilter(column, e.target.value)}
-                                  InputProps={{
-                                    startAdornment: (
-                                      <InputAdornment position="start">
-                                        <SearchIcon fontSize="small" color="inherit" />
-                                      </InputAdornment>
-                                    ),
-                                  }}
+                            {tableData.columns.map((column, index) => {
+                              const columnInfo = tableData.column_info.find(col => col.name === column);
+                              const placeholder = columnInfo
+                                ? `Filter ${column} (${columnInfo.data_type}${columnInfo.is_primary_key ? ', PK' : ''})`
+                                : `Filter ${column}`;
+                              return (
+                                <TableCell
+                                  key={`filter-${index}`}
                                   sx={{
-                                    '& .MuiOutlinedInput-root': {
-                                      fontSize: '0.75rem',
-                                      height: '32px',
-                                      color: 'text.primary',
-                                      backgroundColor: 'background.default',
-                                      '& .MuiOutlinedInput-notchedOutline': {
-                                        borderColor: 'divider',
-                                      },
-                                      '&:hover .MuiOutlinedInput-notchedOutline': {
-                                        borderColor: 'text.secondary',
-                                      },
-                                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                                        borderColor: 'primary.main',
-                                      },
-                                    },
-                                    '& .MuiInputBase-input': {
-                                      padding: '6px 8px',
-                                      '::placeholder': {
-                                        color: 'text.secondary',
-                                        opacity: 1,
-                                      },
-                                    },
-                                    '& .MuiInputAdornment-root svg': {
-                                      color: 'text.secondary',
-                                    },
+                                    padding: 1,
+                                    backgroundColor: 'background.paper',
+                                    borderBottom: '1px solid',
+                                    borderColor: 'divider',
+                                    minWidth: 200,
+                                    whiteSpace: 'nowrap',
                                   }}
-                                />
-                              </TableCell>
-                            ))}
+                                >
+                                  <Tooltip
+                                    title={
+                                      columnInfo ? (
+                                        <Box>
+                                          <Typography variant="caption" display="block">
+                                            Type: {columnInfo.data_type}
+                                          </Typography>
+                                          {!columnInfo.is_nullable && (
+                                            <Typography variant="caption" display="block">
+                                              Required field (NOT NULL)
+                                            </Typography>
+                                          )}
+                                          {columnInfo.enum_values && columnInfo.enum_values.length > 0 && (
+                                            <Typography variant="caption" display="block">
+                                              Allowed values: {columnInfo.enum_values.join(', ')}
+                                            </Typography>
+                                          )}
+                                          <Typography variant="caption" display="block" sx={{ mt: 0.5, fontStyle: 'italic' }}>
+                                            Use operators: eq:, gt:, lt:, contains:, etc.
+                                          </Typography>
+                                        </Box>
+                                      ) : ''
+                                    }
+                                    arrow
+                                    placement="top"
+                                  >
+                                    <TextField
+                                      fullWidth
+                                      size="small"
+                                      placeholder={placeholder}
+                                      value={filters[column] || ''}
+                                      onChange={(e) => updateFilter(column, e.target.value)}
+                                      InputProps={{
+                                        startAdornment: (
+                                          <InputAdornment position="start">
+                                            <SearchIcon fontSize="small" color="inherit" />
+                                          </InputAdornment>
+                                        ),
+                                      }}
+                                      sx={{
+                                        '& .MuiOutlinedInput-root': {
+                                          fontSize: '0.75rem',
+                                          height: '32px',
+                                          color: 'text.primary',
+                                          backgroundColor: 'background.default',
+                                          '& .MuiOutlinedInput-notchedOutline': {
+                                            borderColor: 'divider',
+                                          },
+                                          '&:hover .MuiOutlinedInput-notchedOutline': {
+                                            borderColor: 'text.secondary',
+                                          },
+                                          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                            borderColor: 'primary.main',
+                                          },
+                                        },
+                                        '& .MuiInputBase-input': {
+                                          padding: '6px 8px',
+                                          '::placeholder': {
+                                            color: 'text.secondary',
+                                            opacity: 1,
+                                          },
+                                        },
+                                        '& .MuiInputAdornment-root svg': {
+                                          color: 'text.secondary',
+                                        },
+                                      }}
+                                    />
+                                  </Tooltip>
+                                </TableCell>
+                              );
+                            })}
                           </TableRow>
                         </TableHead>
                         <TableBody>
@@ -546,7 +676,6 @@ const SqlEditor = () => {
                                     borderBottom: '1px solid',
                                     borderColor: 'divider',
                                     minWidth: 200,
-                                    width: 200,
                                     whiteSpace: 'nowrap',
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis',

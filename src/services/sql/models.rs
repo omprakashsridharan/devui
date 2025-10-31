@@ -16,10 +16,19 @@ pub struct ColumnInfo {
     pub is_nullable: bool,
     pub is_primary_key: bool,
     pub default_value: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enum_values: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct TableRow {
     pub columns: HashSet<String>,
     pub data: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct TableData {
+    pub rows: Vec<TableRow>,
+    pub total_rows: u64,
+    pub columns: Vec<ColumnInfo>,
 }

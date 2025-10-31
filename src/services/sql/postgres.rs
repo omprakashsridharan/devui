@@ -3,7 +3,7 @@ use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
 use crate::services::sql::field_decoder::FieldDecoder;
 use crate::services::sql::filter_handler::FilterHandler;
-use crate::services::sql::models::{ColumnInfo, TableInfo, TableRow};
+use crate::services::sql::models::{ColumnInfo, TableData, TableInfo, TableRow};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Column, Pool, Postgres, Row};
 use std::collections::{HashMap, HashSet};
@@ -41,6 +41,179 @@ impl PostgresConnectionPool {
             }
         }
     }
+
+    /// Fetch ENUM values for a given type name
+    async fn fetch_enum_values(
+        &self,
+        type_name: &str,
+        type_schema: Option<&str>,
+    ) -> Result<Vec<String>, ConnectionPoolError> {
+        let schema_filter = if let Some(schema) = type_schema {
+            format!("AND n.nspname = '{}'", schema.replace("'", "''"))
+        } else {
+            String::new()
+        };
+
+        let query = format!(
+            r#"
+            SELECT e.enumlabel AS enum_value
+            FROM pg_type t
+            JOIN pg_enum e ON t.oid = e.enumtypid
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE t.typname = '{}'
+            {}
+            ORDER BY e.enumsortorder
+            "#,
+            type_name.replace("'", "''"),
+            schema_filter
+        );
+
+        let rows = sqlx::query(&query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::warn!("Failed to fetch enum values for type {}: {}", type_name, e);
+                ConnectionPoolError::SqlxError(e)
+            })?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| row.get::<String, _>("enum_value"))
+            .collect())
+    }
+
+    /// Fetch column information for a specific table
+    async fn fetch_table_columns(
+        &self,
+        table_name: &str,
+        table_schema: Option<&str>,
+    ) -> Result<Vec<ColumnInfo>, ConnectionPoolError> {
+        let schema_filter = if let Some(schema) = table_schema {
+            format!("AND c.table_schema = '{}'", schema.replace("'", "''"))
+        } else {
+            String::new()
+        };
+
+        let query = format!(
+            r#"
+            SELECT
+                c.column_name,
+                c.data_type,
+                c.udt_name,
+                c.is_nullable,
+                c.column_default,
+                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key
+            FROM information_schema.columns c
+            LEFT JOIN (
+                SELECT ku.table_name, ku.column_name, ku.table_schema
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name
+                WHERE tc.constraint_type = 'PRIMARY KEY'
+            ) pk ON c.table_name = pk.table_name
+                AND c.column_name = pk.column_name
+                AND c.table_schema = pk.table_schema
+            WHERE c.table_name = '{}'
+            {}
+            ORDER BY c.ordinal_position
+            "#,
+            table_name.replace("'", "''"),
+            schema_filter
+        );
+
+        let rows = sqlx::query(&query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to fetch columns for table {}: {}", table_name, e);
+                ConnectionPoolError::SqlxError(e)
+            })?;
+
+        let mut columns = Vec::new();
+        for row in rows {
+            let column_name: String = row.get("column_name");
+            let data_type: String = row.get("data_type");
+            let udt_name: String = row.get("udt_name");
+            let is_nullable: String = row.get("is_nullable");
+            let column_default: Option<String> = row.get("column_default");
+            let is_primary_key: bool = row.get("is_primary_key");
+
+            // Fetch enum values if this is a USER-DEFINED type
+            let enum_values = if data_type == "USER-DEFINED" {
+                match self
+                    .fetch_enum_values(&udt_name, table_schema)
+                    .await
+                {
+                    Ok(values) if !values.is_empty() => Some(values),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
+            columns.push(ColumnInfo {
+                name: column_name,
+                data_type,
+                is_nullable: is_nullable == "YES",
+                is_primary_key,
+                default_value: column_default,
+                enum_values,
+            });
+        }
+
+        Ok(columns)
+    }
+
+    /// Build SELECT clause parts with proper type casting for user-defined types
+    fn build_select_parts(columns: &[ColumnInfo]) -> Vec<String> {
+        columns
+            .iter()
+            .map(|col| {
+                if col.data_type == "USER-DEFINED" {
+                    format!("{}::text as {}", col.name, col.name)
+                } else {
+                    col.name.clone()
+                }
+            })
+            .collect()
+    }
+
+    /// Convert ColumnInfo to tuple format for filter handler
+    fn columns_to_tuples(columns: &[ColumnInfo]) -> Vec<(String, String)> {
+        columns
+            .iter()
+            .map(|col| (col.name.clone(), col.data_type.clone()))
+            .collect()
+    }
+
+    /// Parse query result rows into TableRow structures
+    fn parse_rows(rows: Vec<sqlx::postgres::PgRow>) -> Vec<TableRow> {
+        rows.into_iter()
+            .map(|row| {
+                let mut table_row_data: HashMap<String, String> = HashMap::new();
+                let mut columns_info: HashSet<String> = HashSet::new();
+                let columns = row.columns();
+
+                for column in columns {
+                    columns_info.insert(column.name().to_string());
+
+                    let decoded_value = match FieldDecoder::decode_field(&row, &column) {
+                        Ok(value) => value,
+                        Err(e) => {
+                            tracing::warn!("Failed to decode column {}: {}", column.name(), e);
+                            "[DECODE ERROR]".to_string()
+                        }
+                    };
+
+                    table_row_data.insert(column.name().to_string(), decoded_value);
+                }
+
+                TableRow {
+                    columns: columns_info,
+                    data: table_row_data,
+                }
+            })
+            .collect()
+    }
 }
 
 #[async_trait::async_trait]
@@ -56,6 +229,7 @@ impl ConnectionPool for PostgresConnectionPool {
                     t.table_schema,
                     c.column_name,
                     c.data_type,
+                    c.udt_name,
                     c.is_nullable,
                     c.column_default,
                     CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key
@@ -71,100 +245,100 @@ impl ConnectionPool for PostgresConnectionPool {
                 ORDER BY t.table_schema, t.table_name, c.ordinal_position
             "#;
 
-        match sqlx::query(query).fetch_all(&self.pool).await {
-            Ok(rows) => {
-                let mut tables: HashMap<String, TableInfo> = HashMap::new();
-
-                for row in rows {
-                    let table_name: String = row.get("table_name");
-                    let table_schema: String = row.get("table_schema");
-                    let column_name: Option<String> = row.get("column_name");
-
-                    let table_key = format!("{}.{}", table_schema, table_name);
-
-                    if !tables.contains_key(&table_key) {
-                        tables.insert(
-                            table_key.clone(),
-                            TableInfo {
-                                name: table_name,
-                                schema: table_schema,
-                                columns: Vec::new(),
-                            },
-                        );
-                    }
-
-                    if let Some(column_name) = column_name {
-                        let data_type: String = row.get("data_type");
-                        let is_nullable: String = row.get("is_nullable");
-                        let column_default: Option<String> = row.get("column_default");
-                        let is_primary_key: bool = row.get("is_primary_key");
-
-                        let column_info = ColumnInfo {
-                            name: column_name,
-                            data_type,
-                            is_nullable: is_nullable == "YES",
-                            is_primary_key,
-                            default_value: column_default,
-                        };
-
-                        tables
-                            .get_mut(&table_key)
-                            .unwrap()
-                            .columns
-                            .push(column_info);
-                    }
-                }
-
-                Ok(tables.into_values().collect())
-            }
-            Err(e) => {
+        let rows = sqlx::query(query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| {
                 tracing::error!("Failed to fetch tables: {}", e);
-                Err(ConnectionPoolError::SqlxError(e))
+                ConnectionPoolError::SqlxError(e)
+            })?;
+
+        let mut tables: HashMap<String, TableInfo> = HashMap::new();
+
+        for row in rows {
+            let table_name: String = row.get("table_name");
+            let table_schema: String = row.get("table_schema");
+            let column_name: Option<String> = row.get("column_name");
+            let table_schema_clone = table_schema.clone();
+
+            let table_key = format!("{}.{}", table_schema, table_name);
+
+            // Initialize table if not exists
+            tables
+                .entry(table_key.clone())
+                .or_insert_with(|| TableInfo {
+                    name: table_name,
+                    schema: table_schema,
+                    columns: Vec::new(),
+                });
+
+            // Add column if present
+            if let Some(column_name) = column_name {
+                let data_type: String = row.get("data_type");
+                let udt_name: String = row.get("udt_name");
+                let is_nullable: String = row.get("is_nullable");
+                let column_default: Option<String> = row.get("column_default");
+                let is_primary_key: bool = row.get("is_primary_key");
+
+                // Fetch enum values if this is a USER-DEFINED type
+                let enum_values = if data_type == "USER-DEFINED" {
+                    match self
+                        .fetch_enum_values(&udt_name, Some(&table_schema_clone))
+                        .await
+                    {
+                        Ok(values) if !values.is_empty() => Some(values),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+
+                let column_info = ColumnInfo {
+                    name: column_name,
+                    data_type,
+                    is_nullable: is_nullable == "YES",
+                    is_primary_key,
+                    default_value: column_default,
+                    enum_values,
+                };
+
+                tables
+                    .get_mut(&table_key)
+                    .expect("Table should exist after entry")
+                    .columns
+                    .push(column_info);
             }
         }
+
+        Ok(tables.into_values().collect())
     }
 
     async fn table_data(
         &self,
         table_name: String,
         filters: Option<HashMap<String, String>>,
-    ) -> Result<Vec<TableRow>, ConnectionPoolError> {
-        let column_query = format!(
-            r#"
-        SELECT column_name, data_type, udt_name, is_nullable
-        FROM information_schema.columns
-        WHERE table_name = '{}'
-        "#,
-            table_name
-        );
+    ) -> Result<TableData, ConnectionPoolError> {
+        // Fetch column information using the reusable method
+        let columns = self.fetch_table_columns(&table_name, None).await?;
 
-        let columns_info = sqlx::query(&column_query)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(ConnectionPoolError::SqlxError)?;
-
-        // Build SELECT parts and prepare column info for filter handling
-        let mut select_parts = Vec::new();
-        let mut column_info = Vec::new();
-
-        for row in columns_info {
-            let column_name: String = row.get("column_name");
-            let data_type: String = row.get("data_type");
-
-            // Handle custom type casting for SELECT
-            if data_type == "USER-DEFINED" {
-                select_parts.push(format!("{}::text as {}", column_name, column_name));
-            } else {
-                select_parts.push(column_name.clone());
-            }
-
-            // Collect column info for filter handling
-            column_info.push((column_name, data_type));
+        if columns.is_empty() {
+            tracing::warn!("No columns found for table: {}", table_name);
+            return Ok(TableData {
+                rows: Vec::new(),
+                total_rows: 0,
+                columns: Vec::new(),
+            });
         }
+
+        // Build SELECT parts with proper type casting
+        let select_parts = Self::build_select_parts(&columns);
+
+        // Convert to tuple format for filter handler
+        let column_tuples = Self::columns_to_tuples(&columns);
 
         // Build WHERE clauses using the comprehensive filter handler
         let where_clauses = if let Some(ref filters) = filters {
-            FilterHandler::build_where_clauses(filters, &column_info).map_err(|e| {
+            FilterHandler::build_where_clauses(filters, &column_tuples).map_err(|e| {
                 tracing::error!("Failed to build WHERE clauses: {}", e);
                 ConnectionPoolError::SqlxError(sqlx::Error::Configuration(e.to_string().into()))
             })?
@@ -172,50 +346,48 @@ impl ConnectionPool for PostgresConnectionPool {
             Vec::new()
         };
 
-        // Build the final query
-        let mut query = format!("SELECT {} FROM {}", select_parts.join(", "), table_name);
+        // Build the final query (table_name should be validated/escaped by caller)
+        let escaped_table_name = table_name.replace("'", "''");
+        let mut query = format!("SELECT {} FROM {}", select_parts.join(", "), escaped_table_name);
 
         if !where_clauses.is_empty() {
             query.push_str(&format!(" WHERE {}", where_clauses.join(" AND ")));
         }
 
-        query.push_str(" LIMIT 10"); // Increased limit for filtered results
+        query.push_str(" LIMIT 10");
 
         tracing::debug!("SQL query: {}", query);
 
-        match sqlx::query(&query).fetch_all(&self.pool).await {
-            Ok(rows) => {
-                let mut table_data: Vec<TableRow> = Vec::new();
-                for row in rows {
-                    let mut table_row_data: HashMap<String, String> = HashMap::new();
-                    let mut columns_info: HashSet<String> = HashSet::new();
-                    let columns = row.columns();
-                    for column in columns {
-                        columns_info.insert(column.name().to_string());
-
-                        // Use the comprehensive field decoder
-                        let decoded_value = match FieldDecoder::decode_field(&row, &column) {
-                            Ok(value) => value,
-                            Err(e) => {
-                                tracing::warn!("Failed to decode column {}: {}", column.name(), e);
-                                "[DECODE ERROR]".to_string()
-                            }
-                        };
-
-                        table_row_data.insert(column.name().to_string(), decoded_value);
-                    }
-                    table_data.push(TableRow {
-                        columns: columns_info,
-                        data: table_row_data,
-                    })
-                }
-
-                Ok(table_data)
-            }
-            Err(e) => {
+        // Execute query and parse results
+        let rows = sqlx::query(&query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| {
                 tracing::error!("Failed to fetch table data: {}", e);
-                Err(ConnectionPoolError::SqlxError(e))
-            }
-        }
+                ConnectionPoolError::SqlxError(e)
+            })?;
+
+        let table_data = Self::parse_rows(rows);
+
+        Ok(TableData {
+            rows: table_data,
+            total_rows: self.table_count(table_name).await?,
+            columns,
+        })
+    }
+
+    async fn table_count(&self, table_name: String) -> Result<u64, ConnectionPoolError> {
+        // Escape table name to prevent SQL injection
+        let escaped_table_name = table_name.replace("'", "''");
+        let query = format!("SELECT COUNT(*) FROM {}", escaped_table_name);
+
+        sqlx::query(&query)
+            .fetch_one(&self.pool)
+            .await
+            .map(|row| row.get::<i64, _>(0) as u64)
+            .map_err(|e| {
+                tracing::error!("Failed to fetch table count for {}: {}", table_name, e);
+                ConnectionPoolError::SqlxError(e)
+            })
     }
 }
