@@ -24,6 +24,10 @@ import {
   IconButton,
   Tooltip,
   InputAdornment,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import {
   Clear as ClearIcon,
@@ -198,6 +202,238 @@ const SqlEditor = () => {
       ...prev,
       [column]: value,
     }));
+  };
+
+  // Helper function to determine input type based on data_type
+  const getInputType = (dataType: string): 'enum' | 'date' | 'datetime' | 'time' | 'boolean' | 'number' | 'text' => {
+    const normalizedType = dataType.toLowerCase();
+
+    // Check for enum (USER-DEFINED with enum_values)
+    if (normalizedType === 'user-defined') {
+      return 'enum';
+    }
+
+    // Date/time types
+    if (normalizedType.includes('date') && normalizedType.includes('time')) {
+      return 'datetime';
+    }
+    if (normalizedType.includes('date') && !normalizedType.includes('time')) {
+      return 'date';
+    }
+    if (normalizedType.includes('time')) {
+      return 'time';
+    }
+
+    // Boolean types
+    if (normalizedType === 'boolean' || normalizedType === 'bool') {
+      return 'boolean';
+    }
+
+    // Numeric types
+    if (normalizedType.includes('int') ||
+        normalizedType.includes('numeric') ||
+        normalizedType.includes('decimal') ||
+        normalizedType.includes('float') ||
+        normalizedType.includes('double') ||
+        normalizedType.includes('real') ||
+        normalizedType === 'smallint' ||
+        normalizedType === 'bigint') {
+      return 'number';
+    }
+
+    // Default to text
+    return 'text';
+  };
+
+  // Render dynamic filter input based on column type
+  const renderFilterInput = (column: string, columnInfo: { name: string; data_type: string; is_nullable: boolean; is_primary_key: boolean; default_value: string | null; enum_values?: string[] | null } | undefined) => {
+    if (!columnInfo) {
+      return (
+        <TextField
+          fullWidth
+          size="small"
+          placeholder={`Filter ${column}`}
+          value={filters[column] || ''}
+          onChange={(e) => updateFilter(column, e.target.value)}
+          sx={textFieldStyles}
+        />
+      );
+    }
+
+    let inputType = getInputType(columnInfo.data_type);
+    const currentValue = filters[column] || '';
+
+    // Handle enum type first (before switch)
+    if (inputType === 'enum') {
+      if (columnInfo.enum_values && columnInfo.enum_values.length > 0) {
+        return (
+          <FormControl fullWidth size="small" sx={{ minHeight: 32 }}>
+            <Select
+              value={currentValue}
+              onChange={(e) => updateFilter(column, e.target.value)}
+              displayEmpty
+              sx={{
+                fontSize: '0.75rem',
+                height: '32px',
+                '& .MuiSelect-select': {
+                  py: '6px',
+                  px: '8px',
+                },
+              }}
+            >
+              <MenuItem value="">
+                <em>All {column}</em>
+              </MenuItem>
+              {columnInfo.enum_values.map((value) => (
+                <MenuItem key={value} value={value}>
+                  {value}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        );
+      }
+      // If no enum values, treat as text
+      inputType = 'text';
+    }
+
+    switch (inputType) {
+
+      case 'date':
+        return (
+          <TextField
+            fullWidth
+            size="small"
+            type="date"
+            placeholder={`Filter ${column}`}
+            value={currentValue}
+            onChange={(e) => updateFilter(column, e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={textFieldStyles}
+          />
+        );
+
+      case 'datetime':
+        return (
+          <TextField
+            fullWidth
+            size="small"
+            type="datetime-local"
+            placeholder={`Filter ${column}`}
+            value={currentValue}
+            onChange={(e) => updateFilter(column, e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={textFieldStyles}
+          />
+        );
+
+      case 'time':
+        return (
+          <TextField
+            fullWidth
+            size="small"
+            type="time"
+            placeholder={`Filter ${column}`}
+            value={currentValue}
+            onChange={(e) => updateFilter(column, e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={textFieldStyles}
+          />
+        );
+
+      case 'boolean':
+        return (
+          <FormControl fullWidth size="small" sx={{ minHeight: 32 }}>
+            <Select
+              value={currentValue}
+              onChange={(e) => updateFilter(column, e.target.value)}
+              displayEmpty
+              sx={{
+                fontSize: '0.75rem',
+                height: '32px',
+                '& .MuiSelect-select': {
+                  py: '6px',
+                  px: '8px',
+                },
+              }}
+            >
+              <MenuItem value="">
+                <em>All {column}</em>
+              </MenuItem>
+              <MenuItem value="true">True</MenuItem>
+              <MenuItem value="false">False</MenuItem>
+            </Select>
+          </FormControl>
+        );
+
+      case 'number':
+        return (
+          <TextField
+            fullWidth
+            size="small"
+            type="number"
+            placeholder={`Filter ${column}`}
+            value={currentValue}
+            onChange={(e) => updateFilter(column, e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" color="inherit" />
+                </InputAdornment>
+              ),
+            }}
+            sx={textFieldStyles}
+          />
+        );
+
+      default: // text
+        return (
+          <TextField
+            fullWidth
+            size="small"
+            placeholder={`Filter ${column} (${columnInfo.data_type}${columnInfo.is_primary_key ? ', PK' : ''})`}
+            value={currentValue}
+            onChange={(e) => updateFilter(column, e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" color="inherit" />
+                </InputAdornment>
+              ),
+            }}
+            sx={textFieldStyles}
+          />
+        );
+    }
+  };
+
+  // Shared styles for text fields
+  const textFieldStyles = {
+    '& .MuiOutlinedInput-root': {
+      fontSize: '0.75rem',
+      height: '32px',
+      color: 'text.primary',
+      backgroundColor: 'background.default',
+      '& .MuiOutlinedInput-notchedOutline': {
+        borderColor: 'divider',
+      },
+      '&:hover .MuiOutlinedInput-notchedOutline': {
+        borderColor: 'text.secondary',
+      },
+      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+        borderColor: 'primary.main',
+      },
+    },
+    '& .MuiInputBase-input': {
+      padding: '6px 8px',
+      '::placeholder': {
+        color: 'text.secondary',
+        opacity: 1,
+      },
+    },
+    '& .MuiInputAdornment-root svg': {
+      color: 'text.secondary',
+    },
   };
 
   if (connectionsLoading) {
@@ -568,9 +804,8 @@ const SqlEditor = () => {
                           <TableRow>
                             {tableData.columns.map((column, index) => {
                               const columnInfo = tableData.column_info.find(col => col.name === column);
-                              const placeholder = columnInfo
-                                ? `Filter ${column} (${columnInfo.data_type}${columnInfo.is_primary_key ? ', PK' : ''})`
-                                : `Filter ${column}`;
+                              const inputType = columnInfo ? getInputType(columnInfo.data_type) : 'text';
+
                               return (
                                 <TableCell
                                   key={`filter-${index}`}
@@ -600,56 +835,20 @@ const SqlEditor = () => {
                                               Allowed values: {columnInfo.enum_values.join(', ')}
                                             </Typography>
                                           )}
-                                          <Typography variant="caption" display="block" sx={{ mt: 0.5, fontStyle: 'italic' }}>
-                                            Use operators: eq:, gt:, lt:, contains:, etc.
-                                          </Typography>
+                                          {(inputType === 'text' || inputType === 'number') && (
+                                            <Typography variant="caption" display="block" sx={{ mt: 0.5, fontStyle: 'italic' }}>
+                                              Use operators: eq:, gt:, lt:, contains:, etc.
+                                            </Typography>
+                                          )}
                                         </Box>
                                       ) : ''
                                     }
                                     arrow
                                     placement="top"
                                   >
-                                    <TextField
-                                      fullWidth
-                                      size="small"
-                                      placeholder={placeholder}
-                                      value={filters[column] || ''}
-                                      onChange={(e) => updateFilter(column, e.target.value)}
-                                      InputProps={{
-                                        startAdornment: (
-                                          <InputAdornment position="start">
-                                            <SearchIcon fontSize="small" color="inherit" />
-                                          </InputAdornment>
-                                        ),
-                                      }}
-                                      sx={{
-                                        '& .MuiOutlinedInput-root': {
-                                          fontSize: '0.75rem',
-                                          height: '32px',
-                                          color: 'text.primary',
-                                          backgroundColor: 'background.default',
-                                          '& .MuiOutlinedInput-notchedOutline': {
-                                            borderColor: 'divider',
-                                          },
-                                          '&:hover .MuiOutlinedInput-notchedOutline': {
-                                            borderColor: 'text.secondary',
-                                          },
-                                          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                                            borderColor: 'primary.main',
-                                          },
-                                        },
-                                        '& .MuiInputBase-input': {
-                                          padding: '6px 8px',
-                                          '::placeholder': {
-                                            color: 'text.secondary',
-                                            opacity: 1,
-                                          },
-                                        },
-                                        '& .MuiInputAdornment-root svg': {
-                                          color: 'text.secondary',
-                                        },
-                                      }}
-                                    />
+                                    <Box>
+                                      {renderFilterInput(column, columnInfo)}
+                                    </Box>
                                   </Tooltip>
                                 </TableCell>
                               );
