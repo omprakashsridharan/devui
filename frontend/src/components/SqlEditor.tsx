@@ -40,6 +40,10 @@ import {
   Visibility as ShowDataIcon,
   Search as SearchIcon,
   Link as LinkIcon,
+  Save as SaveIcon,
+  Edit as EditIcon,
+  Check as CheckIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { sqlService, type SqlConnection } from '../services/sqlService';
 
@@ -99,6 +103,13 @@ const SqlEditor = () => {
     referencedTable: string;
     referencedSchema: string;
   } | null>(null);
+
+  // Edit state management
+  const [editedData, setEditedData] = useState<Record<number, Record<string, unknown>>>({});
+  const [originalData, setOriginalData] = useState<Record<number, Record<string, unknown>>>({});
+  const [hasChanges, setHasChanges] = useState(false);
+  const [activeEditingCell, setActiveEditingCell] = useState<{ rowIndex: number; column: string } | null>(null);
+  const [editingCellValue, setEditingCellValue] = useState<unknown>(null);
 
   const loadConnections = async () => {
     try {
@@ -213,6 +224,18 @@ const SqlEditor = () => {
         currentPageSize
       );
       setTableData(data);
+
+      // Create snapshot of original data for change tracking
+      const originalSnapshot: Record<number, Record<string, unknown>> = {};
+      data.data.forEach((row, index) => {
+        originalSnapshot[index] = { ...row };
+      });
+      setOriginalData(originalSnapshot);
+      setEditedData({});
+      setHasChanges(false);
+      setActiveEditingCell(null);
+      setEditingCellValue(null);
+
       // Update page state if explicitly provided
       if (pageNum !== undefined) {
         setPage(pageNum);
@@ -309,6 +332,152 @@ const SqlEditor = () => {
       ...prev,
       [column]: value,
     }));
+  };
+
+  // Handle cell edit
+  const handleCellEdit = (rowIndex: number, column: string, value: unknown, columnInfo?: { is_nullable: boolean; data_type: string }) => {
+    // Convert value based on type and nullability
+    let processedValue: unknown = value;
+
+    if (value === '' && columnInfo?.is_nullable) {
+      processedValue = null;
+    } else if (columnInfo?.data_type) {
+      const inputType = getInputType(columnInfo.data_type);
+      if (inputType === 'number' && value !== null && value !== undefined && value !== '') {
+        const numValue = Number(value);
+        processedValue = isNaN(numValue) ? value : numValue;
+      } else if (inputType === 'boolean') {
+        if (value === 'true' || value === true) {
+          processedValue = true;
+        } else if (value === 'false' || value === false) {
+          processedValue = false;
+        } else if (value === '' && columnInfo.is_nullable) {
+          processedValue = null;
+        }
+      }
+    }
+
+    // Update edited data
+    setEditedData(prev => {
+      const newEdited = { ...prev };
+      if (!newEdited[rowIndex]) {
+        newEdited[rowIndex] = { ...originalData[rowIndex] };
+      }
+      newEdited[rowIndex] = { ...newEdited[rowIndex], [column]: processedValue };
+      return newEdited;
+    });
+  };
+
+  // Detect changes by comparing editedData with originalData
+  useEffect(() => {
+    if (!tableData || Object.keys(editedData).length === 0) {
+      setHasChanges(false);
+      return;
+    }
+
+    let changesDetected = false;
+    for (const [rowIndexStr, editedRow] of Object.entries(editedData)) {
+      const rowIndex = parseInt(rowIndexStr, 10);
+      const originalRow = originalData[rowIndex];
+
+      if (!originalRow) continue;
+
+      for (const column of tableData.columns) {
+        const originalValue = originalRow[column];
+        const editedValue = editedRow[column];
+
+        // Compare values (handle null/undefined)
+        if (originalValue !== editedValue) {
+          // Normalize for comparison
+          const orig = originalValue === null || originalValue === undefined ? null : String(originalValue);
+          const edit = editedValue === null || editedValue === undefined ? null : String(editedValue);
+
+          if (orig !== edit) {
+            changesDetected = true;
+            break;
+          }
+        }
+      }
+
+      if (changesDetected) break;
+    }
+
+    setHasChanges(changesDetected);
+  }, [editedData, originalData, tableData]);
+
+  // Prepare request body for committing changes
+  const prepareCommitRequestBody = () => {
+    if (!selectedConnection || !currentTableName || !tableData) {
+      return null;
+    }
+
+    const connectionId = getConnectionId(selectedConnection);
+    const changes: Array<{
+      rowIndex: number;
+      originalRow: Record<string, unknown>;
+      updatedRow: Record<string, unknown>;
+      primaryKeyValues: Record<string, unknown>;
+    }> = [];
+
+    // Iterate through edited rows
+    for (const [rowIndexStr, editedRow] of Object.entries(editedData)) {
+      const rowIndex = parseInt(rowIndexStr, 10);
+      const originalRow = originalData[rowIndex];
+
+      if (!originalRow) continue;
+
+      // Check if row actually has changes
+      let hasRowChanges = false;
+      const updatedRow: Record<string, unknown> = { ...originalRow };
+
+      for (const column of tableData.columns) {
+        const originalValue = originalRow[column];
+        const editedValue = editedRow[column];
+
+        if (originalValue !== editedValue) {
+          // Normalize for comparison
+          const orig = originalValue === null || originalValue === undefined ? null : String(originalValue);
+          const edit = editedValue === null || editedValue === undefined ? null : String(editedValue);
+
+          if (orig !== edit) {
+            hasRowChanges = true;
+            updatedRow[column] = editedValue;
+          }
+        }
+      }
+
+      if (hasRowChanges) {
+        // Extract primary key values from original row for WHERE clause
+        const primaryKeyValues: Record<string, unknown> = {};
+        tableData.column_info.forEach(colInfo => {
+          if (colInfo.is_primary_key) {
+            primaryKeyValues[colInfo.name] = originalRow[colInfo.name];
+          }
+        });
+
+        changes.push({
+          rowIndex,
+          originalRow: { ...originalRow },
+          updatedRow,
+          primaryKeyValues,
+        });
+      }
+    }
+
+    return {
+      connectionId,
+      tableName: currentTableName,
+      changes,
+    };
+  };
+
+  // Handle commit changes button click
+  const handleCommitChanges = () => {
+    const requestBody = prepareCommitRequestBody();
+    if (requestBody) {
+      console.log('Commit Changes Request Body:', JSON.stringify(requestBody, null, 2));
+      // TODO: Make API call here when endpoint is available
+    }
   };
 
   // Helper function to determine input type based on data_type
@@ -512,6 +681,364 @@ const SqlEditor = () => {
           />
         );
     }
+  };
+
+  // Handle cell edit activation
+  const handleCellClick = (rowIndex: number, column: string, value: unknown) => {
+    setActiveEditingCell({ rowIndex, column });
+    setEditingCellValue(value);
+  };
+
+  // Handle saving cell edit
+  const handleCellSave = (rowIndex: number, column: string, columnInfo?: { is_nullable: boolean; data_type: string }) => {
+    if (editingCellValue !== originalData[rowIndex]?.[column]) {
+      handleCellEdit(rowIndex, column, editingCellValue, columnInfo);
+    }
+    setActiveEditingCell(null);
+    setEditingCellValue(null);
+  };
+
+  // Handle canceling cell edit
+  const handleCellCancel = () => {
+    setActiveEditingCell(null);
+    setEditingCellValue(null);
+  };
+
+  // Render editable cell input based on column type
+  const renderEditableCell = (
+    rowIndex: number,
+    column: string,
+    value: unknown,
+    columnInfo?: { name: string; data_type: string; is_nullable: boolean; is_primary_key: boolean; enum_values?: string[] | null; foreign_key?: { referenced_table: string; referenced_schema: string; referenced_column: string } | null }
+  ) => {
+    // Check if cell is currently being edited
+    const isEditing = activeEditingCell?.rowIndex === rowIndex && activeEditingCell?.column === column;
+
+    // Check if cell has been edited (saved changes)
+    const editedRow = editedData[rowIndex];
+    const cellValue = editedRow && Object.prototype.hasOwnProperty.call(editedRow, column) ? editedRow[column] : value;
+    const isEdited = editedRow && Object.prototype.hasOwnProperty.call(editedRow, column) && cellValue !== originalData[rowIndex]?.[column];
+
+    // Primary key and foreign key columns are read-only
+    if (columnInfo?.is_primary_key || columnInfo?.foreign_key) {
+      const stringValue = cellValue === null || cellValue === undefined || cellValue === '' ? 'null' : String(cellValue);
+      const displayValue = stringValue.length > 50 ? stringValue.substring(0, 50) + '...' : stringValue;
+
+      if (columnInfo.foreign_key) {
+        return (
+          <Tooltip
+            title={`Click to view ${columnInfo.foreign_key.referenced_schema}.${columnInfo.foreign_key.referenced_table}`}
+            arrow
+          >
+            <Typography
+              variant="body2"
+              onClick={() => handleForeignKeyClick(columnInfo.foreign_key!, stringValue)}
+              sx={{
+                color: 'primary.main',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                '&:hover': {
+                  color: 'primary.dark',
+                  textDecoration: 'underline',
+                },
+              }}
+              title={stringValue}
+            >
+              {displayValue}
+            </Typography>
+          </Tooltip>
+        );
+      }
+
+      return (
+        <Typography variant="body2" title={stringValue} sx={{ fontFamily: 'monospace' }}>
+          {displayValue}
+        </Typography>
+      );
+    }
+
+    // If not editing, show readonly view with edit icon on hover
+    if (!isEditing) {
+      const displayValue = cellValue === null || cellValue === undefined || cellValue === ''
+        ? <em style={{ color: '#999' }}>null</em>
+        : String(cellValue).length > 50
+          ? String(cellValue).substring(0, 50) + '...'
+          : String(cellValue);
+
+      return (
+        <Box
+          sx={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            width: '100%',
+            minHeight: '32px',
+            px: 1,
+            py: 0.5,
+            cursor: 'pointer',
+            borderRadius: 1,
+            '&:hover': {
+              backgroundColor: 'action.hover',
+              '& .edit-icon': {
+                opacity: 1,
+              },
+            },
+            ...(isEdited && {
+              backgroundColor: 'action.selected',
+              borderLeft: '3px solid',
+              borderColor: 'warning.main',
+            }),
+          }}
+          onClick={() => handleCellClick(rowIndex, column, cellValue)}
+        >
+          <Typography
+            variant="body2"
+            sx={{
+              flex: 1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontFamily: cellValue === null || cellValue === undefined || cellValue === '' ? 'inherit' : 'monospace',
+            }}
+            title={cellValue === null || cellValue === undefined || cellValue === '' ? 'null' : String(cellValue)}
+          >
+            {displayValue}
+          </Typography>
+          <EditIcon
+            className="edit-icon"
+            sx={{
+              opacity: 0,
+              transition: 'opacity 0.2s',
+              fontSize: '16px',
+              color: 'text.secondary',
+              ml: 1,
+            }}
+          />
+        </Box>
+      );
+    }
+
+    // If editing, show input with check/cancel buttons
+    const currentEditingValue = editingCellValue === null || editingCellValue === undefined || editingCellValue === '' ? '' : String(editingCellValue);
+    const hasChanged = String(editingCellValue || '') !== String(originalData[rowIndex]?.[column] || '');
+    const inputType = columnInfo ? getInputType(columnInfo.data_type) : 'text';
+
+    // Render input based on type
+    const renderInput = () => {
+      // Handle enum type
+      if (inputType === 'enum' && columnInfo?.enum_values && columnInfo.enum_values.length > 0) {
+        return (
+          <Select
+            value={currentEditingValue}
+            onChange={(e) => setEditingCellValue(e.target.value)}
+            displayEmpty
+            autoFocus
+            size="small"
+            sx={{
+              fontSize: '0.75rem',
+              height: '32px',
+              width: '100%',
+              '& .MuiSelect-select': {
+                py: '6px',
+                px: '8px',
+              },
+            }}
+          >
+            {columnInfo.is_nullable && (
+              <MenuItem value="">
+                <em>null</em>
+              </MenuItem>
+            )}
+            {columnInfo.enum_values.map((enumValue) => (
+              <MenuItem key={enumValue} value={enumValue}>
+                {enumValue}
+              </MenuItem>
+            ))}
+          </Select>
+        );
+      }
+
+      switch (inputType) {
+        case 'boolean':
+          return (
+            <Select
+              value={currentEditingValue}
+              onChange={(e) => setEditingCellValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  handleCellCancel();
+                }
+              }}
+              displayEmpty
+              autoFocus
+              size="small"
+              sx={{
+                fontSize: '0.75rem',
+                height: '32px',
+                width: '100%',
+                '& .MuiSelect-select': {
+                  py: '6px',
+                  px: '8px',
+                },
+              }}
+            >
+              {columnInfo?.is_nullable && (
+                <MenuItem value="">
+                  <em>null</em>
+                </MenuItem>
+              )}
+              <MenuItem value="true">True</MenuItem>
+              <MenuItem value="false">False</MenuItem>
+            </Select>
+          );
+
+        case 'date':
+          return (
+            <TextField
+              type="date"
+              value={currentEditingValue}
+              onChange={(e) => setEditingCellValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && hasChanged) {
+                  handleCellSave(rowIndex, column, columnInfo);
+                } else if (e.key === 'Escape') {
+                  handleCellCancel();
+                }
+              }}
+              InputLabelProps={{ shrink: true }}
+              autoFocus
+              size="small"
+              fullWidth
+              sx={textFieldStyles}
+            />
+          );
+
+        case 'datetime':
+          return (
+            <TextField
+              type="datetime-local"
+              value={currentEditingValue}
+              onChange={(e) => setEditingCellValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && hasChanged) {
+                  handleCellSave(rowIndex, column, columnInfo);
+                } else if (e.key === 'Escape') {
+                  handleCellCancel();
+                }
+              }}
+              InputLabelProps={{ shrink: true }}
+              autoFocus
+              size="small"
+              fullWidth
+              sx={textFieldStyles}
+            />
+          );
+
+        case 'time':
+          return (
+            <TextField
+              type="time"
+              value={currentEditingValue}
+              onChange={(e) => setEditingCellValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && hasChanged) {
+                  handleCellSave(rowIndex, column, columnInfo);
+                } else if (e.key === 'Escape') {
+                  handleCellCancel();
+                }
+              }}
+              InputLabelProps={{ shrink: true }}
+              autoFocus
+              size="small"
+              fullWidth
+              sx={textFieldStyles}
+            />
+          );
+
+        case 'number':
+          return (
+            <TextField
+              type="number"
+              value={currentEditingValue}
+              onChange={(e) => setEditingCellValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && hasChanged) {
+                  handleCellSave(rowIndex, column, columnInfo);
+                } else if (e.key === 'Escape') {
+                  handleCellCancel();
+                }
+              }}
+              autoFocus
+              size="small"
+              fullWidth
+              sx={textFieldStyles}
+            />
+          );
+
+        default: // text
+          return (
+            <TextField
+              value={currentEditingValue}
+              onChange={(e) => setEditingCellValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && hasChanged) {
+                  handleCellSave(rowIndex, column, columnInfo);
+                } else if (e.key === 'Escape') {
+                  handleCellCancel();
+                }
+              }}
+              placeholder={columnInfo?.is_nullable ? 'null' : ''}
+              autoFocus
+              size="small"
+              fullWidth
+              sx={textFieldStyles}
+            />
+          );
+      }
+    };
+
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.5,
+          width: '100%',
+        }}
+      >
+        <Box sx={{ flex: 1 }}>
+          {renderInput()}
+        </Box>
+        {hasChanged && (
+          <IconButton
+            size="small"
+            onClick={() => handleCellSave(rowIndex, column, columnInfo)}
+            sx={{
+              color: 'success.main',
+              '&:hover': {
+                backgroundColor: 'success.light',
+                color: 'success.dark',
+              },
+            }}
+          >
+            <CheckIcon fontSize="small" />
+          </IconButton>
+        )}
+        <IconButton
+          size="small"
+          onClick={handleCellCancel}
+          sx={{
+            color: 'text.secondary',
+            '&:hover': {
+              backgroundColor: 'error.light',
+              color: 'error.main',
+            },
+          }}
+        >
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </Box>
+    );
   };
 
   // Shared styles for text fields
@@ -750,6 +1277,18 @@ const SqlEditor = () => {
                     )}
                   </Box>
                   <Box sx={{ display: 'flex', gap: 1 }}>
+                    {hasChanges && (
+                      <Button
+                        variant="contained"
+                        color="success"
+                        startIcon={<SaveIcon />}
+                        onClick={handleCommitChanges}
+                        disabled={loadingTableData || !selectedConnection || !currentTableName}
+                        size="small"
+                      >
+                        Commit Changes
+                      </Button>
+                    )}
                     <Button
                       variant="contained"
                       startIcon={<SearchIcon />}
@@ -1048,7 +1587,6 @@ const SqlEditor = () => {
                             >
                               {tableData.columns.map((column, colIndex) => {
                                 const columnInfo = tableData.column_info.find(col => col.name === column);
-                                const isForeignKey = !!columnInfo?.foreign_key;
                                 return (
                                   <TableCell
                                     key={colIndex}
@@ -1056,60 +1594,10 @@ const SqlEditor = () => {
                                       borderBottom: '1px solid',
                                       borderColor: 'divider',
                                       minWidth: 200,
-                                      whiteSpace: 'nowrap',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
+                                      padding: '8px',
                                     }}
                                   >
-                                    {(() => {
-                                      const value = row[column];
-                                      if (value === null || value === undefined || value === '') {
-                                        return (
-                                          <Typography
-                                            variant="body2"
-                                            color="text.secondary"
-                                            sx={{ fontStyle: 'italic' }}
-                                          >
-                                            null
-                                          </Typography>
-                                        );
-                                      }
-
-                                      const stringValue = String(value);
-                                      const displayValue = stringValue.length > 50 ? stringValue.substring(0, 50) + '...' : stringValue;
-
-                                      if (isForeignKey && columnInfo?.foreign_key) {
-                                        return (
-                                          <Tooltip
-                                            title={`Click to view ${columnInfo.foreign_key.referenced_schema}.${columnInfo.foreign_key.referenced_table}`}
-                                            arrow
-                                          >
-                                            <Typography
-                                              variant="body2"
-                                              onClick={() => handleForeignKeyClick(columnInfo.foreign_key!, stringValue)}
-                                              sx={{
-                                                color: 'primary.main',
-                                                cursor: 'pointer',
-                                                textDecoration: 'underline',
-                                                '&:hover': {
-                                                  color: 'primary.dark',
-                                                  textDecoration: 'underline',
-                                                },
-                                              }}
-                                              title={stringValue}
-                                            >
-                                              {displayValue}
-                                            </Typography>
-                                          </Tooltip>
-                                        );
-                                      }
-
-                                      return (
-                                        <Typography variant="body2" title={stringValue}>
-                                          {displayValue}
-                                        </Typography>
-                                      );
-                                    })()}
+                                    {renderEditableCell(index, column, row[column], columnInfo)}
                                   </TableCell>
                                 );
                               })}

@@ -2,7 +2,10 @@ use axum::{response::Html, routing::get, Router};
 use devui::{
     dev_ui_router, DevUIConfigBuilder, PostgresConfig, SqlConfig,
 };
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::{
+    cors::{AllowOrigin, AllowMethods, AllowHeaders, CorsLayer},
+    trace::TraceLayer,
+};
 
 #[tokio::main]
 async fn main() {
@@ -42,9 +45,19 @@ async fn main() {
         .nest("/dev/ui", dev_ui_router)
         .layer(
             CorsLayer::new()
-                .allow_origin("http://localhost:5173".parse::<axum::http::HeaderValue>().unwrap())
-                .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::PUT, axum::http::Method::DELETE])
-                .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::AUTHORIZATION])
+                .allow_origin(AllowOrigin::exact("http://localhost:5173".parse().unwrap()))
+                .allow_methods(AllowMethods::list([
+                    axum::http::Method::GET,
+                    axum::http::Method::POST,
+                    axum::http::Method::PUT,
+                    axum::http::Method::DELETE,
+                    axum::http::Method::OPTIONS,
+                ]))
+                .allow_headers(AllowHeaders::list([
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::header::AUTHORIZATION,
+                ]))
+                .allow_credentials(true)
         )
         .layer(TraceLayer::new_for_http());
 
