@@ -3,7 +3,7 @@ use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
 use crate::services::sql::field_decoder::FieldDecoder;
 use crate::services::sql::filter_handler::FilterHandler;
-use crate::services::sql::models::{ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow};
+use crate::services::sql::models::{ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow, UpdateData};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Column, Pool, Postgres, Row};
 use std::collections::{HashMap, HashSet};
@@ -476,5 +476,10 @@ impl ConnectionPool for PostgresConnectionPool {
                 tracing::error!("Failed to fetch table count for {}: {}", table_name, e);
                 ConnectionPoolError::SqlxError(e)
             })
+    }
+
+    async fn update_table(&self, update_date: UpdateData) -> Result<(), ConnectionPoolError> {
+        
+        Ok(())
     }
 }
