@@ -1,5 +1,6 @@
 pub mod table_data;
 pub mod tables;
+pub mod update_table;
 
 use crate::services::sql::router::SqlServiceState;
 use axum::extract::State;

@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -41,4 +41,17 @@ pub struct TableData {
     pub rows: Vec<TableRow>,
     pub total_rows: u64,
     pub columns: Vec<ColumnInfo>,
+}
+
+#[derive(Deserialize, PartialEq, Debug, Clone)]
+pub struct UpdateData {
+    pub table_name: String,
+    pub changes: Vec<Change>
+}
+
+#[derive(Deserialize, PartialEq, Debug, Clone)]
+pub struct Change {
+    pub primary_key_values: HashMap<String, String>,
+    pub updated_row: HashMap<String, String>,
+    pub original_row: HashMap<String, String>
 }

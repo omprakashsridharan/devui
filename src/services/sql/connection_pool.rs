@@ -1,5 +1,5 @@
 use crate::handlers::sql::DatabaseType;
-use crate::services::sql::models::{TableData, TableInfo};
+use crate::services::sql::models::{TableData, TableInfo, UpdateData};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -26,4 +26,6 @@ pub trait ConnectionPool: Send + Sync {
     ) -> Result<TableData, ConnectionPoolError>;
 
     async fn table_count(&self, table_name: String) -> Result<u64, ConnectionPoolError>;
+
+    async fn update_table(&self, update_data: UpdateData) -> Result<(), ConnectionPoolError>;
 }

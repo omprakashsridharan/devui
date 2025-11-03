@@ -3,7 +3,7 @@ use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
 use crate::services::sql::field_decoder::FieldDecoder;
 use crate::services::sql::filter_handler::FilterHandler;
-use crate::services::sql::models::{ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow};
+use crate::services::sql::models::{ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow, UpdateData};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Column, Pool, Postgres, Row};
 use std::collections::{HashMap, HashSet};
@@ -255,6 +255,177 @@ impl PostgresConnectionPool {
             })
             .collect()
     }
+
+    /// Escape SQL value to prevent injection
+    fn escape_sql_value(value: &str) -> String {
+        value.replace("'", "''")
+    }
+
+    /// Check if a string represents a numeric value
+    fn is_numeric(value: &str) -> bool {
+        value.parse::<f64>().is_ok()
+    }
+
+    /// Parse boolean value
+    fn parse_boolean(value: &str) -> Result<bool, String> {
+        match value.to_lowercase().as_str() {
+            "true" | "t" | "1" | "yes" | "y" | "on" => Ok(true),
+            "false" | "f" | "0" | "no" | "n" | "off" => Ok(false),
+            _ => Err(format!("Invalid boolean value: '{}'", value)),
+        }
+    }
+
+    /// Format SQL value based on data type for UPDATE statements
+    fn format_sql_value(value: &str, data_type: &str) -> String {
+        // Handle NULL values
+        if value.is_empty() || value == "null" || value == "NULL" {
+            return "NULL".to_string();
+        }
+
+        match data_type.to_lowercase().as_str() {
+            // Numeric types - no quotes
+            "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real"
+            | "double precision" | "int2" | "int4" | "int8" | "float4" | "float8" => {
+                if Self::is_numeric(value) {
+                    value.to_string()
+                } else {
+                    // If not numeric, treat as text
+                    let escaped = Self::escape_sql_value(value);
+                    format!("'{}'", escaped)
+                }
+            }
+
+            // Boolean types - no quotes
+            "boolean" | "bool" => {
+                match Self::parse_boolean(value) {
+                    Ok(true) => "true".to_string(),
+                    Ok(false) => "false".to_string(),
+                    Err(_) => {
+                        // Invalid boolean, treat as text
+                        let escaped = Self::escape_sql_value(value);
+                        format!("'{}'", escaped)
+                    }
+                }
+            }
+
+            // UUID - quoted
+            "uuid" => {
+                let escaped = Self::escape_sql_value(value);
+                format!("'{}'", escaped)
+            }
+
+            // Text types - quoted and escaped
+            "text" | "varchar" | "char" | "character" | "character varying" => {
+                let escaped = Self::escape_sql_value(value);
+                format!("'{}'", escaped)
+            }
+
+            // Date/time types - quoted
+            "timestamp" | "timestamptz" | "date" | "time" | "timetz" => {
+                let escaped = Self::escape_sql_value(value);
+                format!("'{}'", escaped)
+            }
+
+            // JSON types - quoted
+            "json" | "jsonb" => {
+                let escaped = Self::escape_sql_value(value);
+                format!("'{}'", escaped)
+            }
+
+            // User-defined types - quoted (will be cast to text if needed)
+            "user-defined" => {
+                let escaped = Self::escape_sql_value(value);
+                format!("'{}'", escaped)
+            }
+
+            // Default - quoted as text
+            _ => {
+                let escaped = Self::escape_sql_value(value);
+                format!("'{}'", escaped)
+            }
+        }
+    }
+
+    /// Build SET clause for UPDATE statement from changed columns
+    fn build_update_set_clause(
+        columns: &[ColumnInfo],
+        updated_row: &HashMap<String, String>,
+        original_row: &HashMap<String, String>,
+    ) -> Vec<String> {
+        let mut set_parts = Vec::new();
+
+        for col in columns {
+            let col_name = &col.name;
+            let updated_value = updated_row.get(col_name);
+            let original_value = original_row.get(col_name);
+
+            // Check if value changed
+            let changed = match (original_value, updated_value) {
+                (Some(orig), Some(upd)) => {
+                    // Normalize for comparison - treat empty strings as NULL
+                    let orig_norm = if orig.is_empty() || orig == "null" || orig == "NULL" {
+                        None
+                    } else {
+                        Some(orig.as_str())
+                    };
+                    let upd_norm = if upd.is_empty() || upd == "null" || upd == "NULL" {
+                        None
+                    } else {
+                        Some(upd.as_str())
+                    };
+                    orig_norm != upd_norm
+                }
+                (None, Some(_)) => true,
+                (Some(_), None) => true,
+                (None, None) => false,
+            };
+
+            if changed {
+                let formatted_value = if let Some(upd_val) = updated_value {
+                    Self::format_sql_value(upd_val, &col.data_type)
+                } else {
+                    "NULL".to_string()
+                };
+
+                set_parts.push(format!("{} = {}", col_name, formatted_value));
+            }
+        }
+
+        set_parts
+    }
+
+    /// Build WHERE clause for UPDATE statement using primary key values
+    fn build_update_where_clause(
+        columns: &[ColumnInfo],
+        primary_key_values: &HashMap<String, String>,
+    ) -> Result<String, ConnectionPoolError> {
+        let primary_key_columns: Vec<&ColumnInfo> = columns
+            .iter()
+            .filter(|col| col.is_primary_key)
+            .collect();
+
+        if primary_key_columns.is_empty() {
+            return Err(ConnectionPoolError::SqlxError(sqlx::Error::Configuration(
+                "Table has no primary key columns".into(),
+            )));
+        }
+
+        let mut where_parts = Vec::new();
+
+        for pk_col in &primary_key_columns {
+            let pk_value = primary_key_values.get(&pk_col.name).ok_or_else(|| {
+                ConnectionPoolError::SqlxError(sqlx::Error::Configuration(format!(
+                    "Missing primary key value for column: {}",
+                    pk_col.name
+                ).into()))
+            })?;
+
+            let formatted_value = Self::format_sql_value(pk_value, &pk_col.data_type);
+            where_parts.push(format!("{} = {}", pk_col.name, formatted_value));
+        }
+
+        Ok(where_parts.join(" AND "))
+    }
 }
 
 #[async_trait::async_trait]
@@ -476,5 +647,73 @@ impl ConnectionPool for PostgresConnectionPool {
                 tracing::error!("Failed to fetch table count for {}: {}", table_name, e);
                 ConnectionPoolError::SqlxError(e)
             })
+    }
+
+    async fn update_table(&self, update_data: UpdateData) -> Result<(), ConnectionPoolError> {
+        // Early return if no changes
+        if update_data.changes.is_empty() {
+            tracing::debug!("No changes to apply");
+            return Ok(());
+        }
+
+        // Fetch column information for the table
+        let columns = self.fetch_table_columns(&update_data.table_name, None).await?;
+
+        if columns.is_empty() {
+            tracing::warn!("No columns found for table: {}", update_data.table_name);
+            return Err(ConnectionPoolError::SqlxError(sqlx::Error::Configuration(
+                format!("Table '{}' not found or has no columns", update_data.table_name).into(),
+            )));
+        }
+
+        // Escape table name to prevent SQL injection
+        let escaped_table_name = update_data.table_name.replace("'", "''");
+
+        // Process each change
+        for (idx, change) in update_data.changes.iter().enumerate() {
+            // Build WHERE clause from primary key values
+            let where_clause = Self::build_update_where_clause(&columns, &change.primary_key_values)?;
+
+            // Build SET clause from changed columns
+            let set_parts = Self::build_update_set_clause(
+                &columns,
+                &change.updated_row,
+                &change.original_row,
+            );
+
+            // Skip if no columns changed
+            if set_parts.is_empty() {
+                tracing::warn!(
+                    "Change {} has no modified columns, skipping",
+                    idx
+                );
+                continue;
+            }
+
+            // Build UPDATE query
+            let update_query = format!(
+                "UPDATE {} SET {} WHERE {}",
+                escaped_table_name,
+                set_parts.join(", "),
+                where_clause
+            );
+
+            tracing::debug!("Executing UPDATE query (change {}): {}", idx, update_query);
+
+            // Execute UPDATE statement
+            sqlx::query(&update_query)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| {
+                    tracing::error!(
+                        "Failed to execute UPDATE for change {}: {}",
+                        idx,
+                        e
+                    );
+                    ConnectionPoolError::SqlxError(e)
+                })?;
+        }
+
+        Ok(())
     }
 }
