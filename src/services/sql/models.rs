@@ -51,7 +51,7 @@ pub struct UpdateData {
 
 #[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct Change {
-    pub private_key_values: HashMap<String, String>,
+    pub primary_key_values: HashMap<String, String>,
     pub updated_row: HashMap<String, String>,
     pub original_row: HashMap<String, String>
 }

@@ -3,7 +3,7 @@ pub(crate) use crate::services::sql::connection_manager::{
     ConnectionManager, ConnectionManagerError,
 };
 use crate::services::sql::connection_pool::ConnectionPoolError;
-use crate::services::sql::models::{TableData, TableInfo};
+use crate::services::sql::models::{TableData, TableInfo, UpdateData};
 use crate::SqlConfig;
 use std::sync::Arc;
 use thiserror::Error;
@@ -64,5 +64,20 @@ impl Service {
             .await
             .map_err(SqlServiceError::ConnectionPoolError)?;
         Ok(table_data)
+    }
+
+    pub async fn update_table(
+        self,
+        connection_name: String,
+        update_data: UpdateData,
+    ) -> Result<(), SqlServiceError> {
+        let pool = self
+            .connection_manager
+            .get_connection(&connection_name)
+            .map_err(SqlServiceError::ConnectionManagerError)?;
+        pool.update_table(update_data)
+            .await
+            .map_err(SqlServiceError::ConnectionPoolError)?;
+        Ok(())
     }
 }

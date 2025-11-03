@@ -288,6 +288,54 @@ export class SqlService {
       throw new Error('Failed to fetch schema');
     }
   }
+
+  /**
+   * Update table data
+   */
+  async updateTable(
+    connectionId: string,
+    tableName: string,
+    changes: Array<{
+      original_row: Record<string, unknown>;
+      updated_row: Record<string, unknown>;
+      primary_key_values: Record<string, unknown>;
+    }>
+  ): Promise<void> {
+    try {
+      // Convert values to strings as expected by the backend
+      const formattedChanges = changes.map(change => ({
+        original_row: Object.fromEntries(
+          Object.entries(change.original_row).map(([key, value]) => [
+            key,
+            value === null || value === undefined ? '' : String(value),
+          ])
+        ),
+        updated_row: Object.fromEntries(
+          Object.entries(change.updated_row).map(([key, value]) => [
+            key,
+            value === null || value === undefined ? '' : String(value),
+          ])
+        ),
+        primary_key_values: Object.fromEntries(
+          Object.entries(change.primary_key_values).map(([key, value]) => [
+            key,
+            value === null || value === undefined ? '' : String(value),
+          ])
+        ),
+      }));
+
+      await api.put(`/services/sql/connections/${connectionId}/tables/${tableName}`, {
+        table_name: tableName,
+        changes: formattedChanges,
+      });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        console.error('Failed to update table:', error.message);
+        throw new Error(`Failed to update table: ${error.message}`);
+      }
+      throw new Error('Failed to update table');
+    }
+  }
 }
 
 // Export a default instance

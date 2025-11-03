@@ -413,10 +413,9 @@ const SqlEditor = () => {
 
     const connectionId = getConnectionId(selectedConnection);
     const changes: Array<{
-      rowIndex: number;
-      originalRow: Record<string, unknown>;
-      updatedRow: Record<string, unknown>;
-      primaryKeyValues: Record<string, unknown>;
+      original_row: Record<string, unknown>;
+      updated_row: Record<string, unknown>;
+      primary_key_values: Record<string, unknown>;
     }> = [];
 
     // Iterate through edited rows
@@ -456,27 +455,49 @@ const SqlEditor = () => {
         });
 
         changes.push({
-          rowIndex,
-          originalRow: { ...originalRow },
-          updatedRow,
-          primaryKeyValues,
+          original_row: { ...originalRow },
+          updated_row: updatedRow,
+          primary_key_values: primaryKeyValues,
         });
       }
     }
 
     return {
       connectionId,
-      tableName: currentTableName,
+      table_name: currentTableName,
       changes,
     };
   };
 
   // Handle commit changes button click
-  const handleCommitChanges = () => {
+  const handleCommitChanges = async () => {
     const requestBody = prepareCommitRequestBody();
-    if (requestBody) {
-      console.log('Commit Changes Request Body:', JSON.stringify(requestBody, null, 2));
-      // TODO: Make API call here when endpoint is available
+    if (!requestBody || !selectedConnection || !currentTableName) {
+      return;
+    }
+
+    try {
+      const connectionId = getConnectionId(selectedConnection);
+      await sqlService.updateTable(
+        connectionId,
+        requestBody.table_name,
+        requestBody.changes
+      );
+
+      // Clear edited data and refresh table data
+      setEditedData({});
+      setOriginalData({});
+      setHasChanges(false);
+
+      // Reload table data to show updated values
+      await loadTableData(currentTableName);
+
+      // Show success message (you might want to add a toast notification here)
+      console.log('Changes committed successfully');
+    } catch (error) {
+      console.error('Failed to commit changes:', error);
+      // Show error message (you might want to add a toast notification here)
+      alert(`Failed to commit changes: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 

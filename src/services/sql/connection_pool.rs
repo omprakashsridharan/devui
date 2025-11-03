@@ -27,5 +27,5 @@ pub trait ConnectionPool: Send + Sync {
 
     async fn table_count(&self, table_name: String) -> Result<u64, ConnectionPoolError>;
 
-    async fn update_table(&self, update_date: UpdateData) -> Result<(), ConnectionPoolError>;
+    async fn update_table(&self, update_data: UpdateData) -> Result<(), ConnectionPoolError>;
 }
