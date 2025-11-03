@@ -1,6 +1,6 @@
 use hex;
 use sqlx::types::chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
-use sqlx::types::{Json, Uuid};
+use sqlx::types::{BigDecimal, Json, Uuid};
 use sqlx::{Column, Row, TypeInfo};
 use tracing::warn;
 
@@ -106,14 +106,20 @@ impl FieldDecoder {
         let value: f64 = row.try_get(column_name)?;
         Ok(value.to_string())
     }
-
     // Numeric decoder
     fn decode_numeric(
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: String = row.try_get(column_name)?;
-        Ok(value)
+        // Try to decode as Decimal first, then fall back to string
+        match row.try_get::<BigDecimal, _>(column_name) {
+            Ok(value) => Ok(value.to_string()),
+            Err(_) => {
+                // Fallback to string if Decimal fails
+                let value: String = row.try_get(column_name)?;
+                Ok(value)
+            }
+        }
     }
 
     // Boolean decoder
