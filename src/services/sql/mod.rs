@@ -7,3 +7,4 @@ pub mod models;
 mod postgres;
 pub mod router;
 pub mod service;
+mod query_builder;
