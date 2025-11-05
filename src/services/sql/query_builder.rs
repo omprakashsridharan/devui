@@ -72,6 +72,11 @@ pub enum Fk {
     ReferencedColumnName,
 }
 
+#[derive(Iden)]
+pub enum InformationSchema {
+    Table,
+}
+
 pub fn information_schema() -> String {
     "".to_string()
 }
@@ -81,23 +86,23 @@ pub fn primary_key_constraint() -> SelectStatement {
         .column((KeyColumnUsage::Table, KeyColumnUsage::TableName))
         .column((KeyColumnUsage::Table, KeyColumnUsage::ColumnName))
         .column((KeyColumnUsage::Table, KeyColumnUsage::TableSchema))
-        .from(("information_schema", TableConstraints::Table))
+        .from((InformationSchema::Table, TableConstraints::Table))
         .inner_join(
-            ("information_schema", KeyColumnUsage::Table),
+            (InformationSchema::Table, KeyColumnUsage::Table),
             Expr::col((
-                "information_schema",
+                InformationSchema::Table,
                 TableConstraints::Table,
                 TableConstraints::ConstraintName,
             ))
             .equals((
-                "information_schema",
+                InformationSchema::Table,
                 KeyColumnUsage::Table,
                 KeyColumnUsage::ConstraintName,
             )),
         )
         .and_where(
             Expr::col((
-                "information_schema",
+                InformationSchema::Table,
                 TableConstraints::Table,
                 TableConstraints::ConstraintType,
             ))
@@ -116,68 +121,68 @@ pub fn foreign_key_constraint() -> SelectStatement {
                 ConstraintColumnUsage::Table,
                 ConstraintColumnUsage::TableSchema,
             )),
-            "referenced_table_schema",
+            Fk::ReferencedTableSchema,
         )
         .expr_as(
             Expr::col((
                 ConstraintColumnUsage::Table,
                 ConstraintColumnUsage::TableName,
             )),
-            "referenced_table_name",
+            Fk::ReferencedTableName,
         )
         .expr_as(
             Expr::col((
                 ConstraintColumnUsage::Table,
                 ConstraintColumnUsage::ColumnName,
             )),
-            "referenced_column_name",
+            Fk::ReferencedColumnName,
         )
-        .from(("information_schema", TableConstraints::Table))
+        .from((InformationSchema::Table, TableConstraints::Table))
         .inner_join(
-            ("information_schema", KeyColumnUsage::Table),
+            (InformationSchema::Table, KeyColumnUsage::Table),
             all![
                 Expr::col((
-                    "information_schema",
+                    InformationSchema::Table,
                     TableConstraints::Table,
                     TableConstraints::ConstraintName,
                 ))
                 .equals((
-                    "information_schema",
+                    InformationSchema::Table,
                     KeyColumnUsage::Table,
                     KeyColumnUsage::ConstraintName,
                 )),
                 Expr::col((
-                    "information_schema",
+                    InformationSchema::Table,
                     TableConstraints::Table,
                     TableConstraints::TableSchema,
                 ))
                 .equals((
-                    "information_schema",
+                    InformationSchema::Table,
                     KeyColumnUsage::Table,
                     KeyColumnUsage::TableSchema,
                 ))
             ],
         )
         .inner_join(
-            ("information_schema", ConstraintColumnUsage::Table),
+            (InformationSchema::Table, ConstraintColumnUsage::Table),
             all![
                 Expr::col((
-                    "information_schema",
+                    InformationSchema::Table,
                     TableConstraints::Table,
                     TableConstraints::ConstraintName,
                 ))
                 .equals((
-                    "information_schema",
+                    InformationSchema::Table,
                     ConstraintColumnUsage::Table,
                     ConstraintColumnUsage::ConstraintName,
                 )),
                 Expr::col((
-                    "information_schema",
+                    InformationSchema::Table,
                     TableConstraints::Table,
                     TableConstraints::TableSchema,
                 ))
                 .equals((
-                    "information_schema",
+                    InformationSchema::Table,
                     ConstraintColumnUsage::Table,
                     ConstraintColumnUsage::TableSchema,
                 ))
@@ -185,7 +190,7 @@ pub fn foreign_key_constraint() -> SelectStatement {
         )
         .and_where(
             Expr::col((
-                "information_schema",
+                InformationSchema::Table,
                 TableConstraints::Table,
                 TableConstraints::ConstraintType,
             ))
@@ -210,17 +215,17 @@ pub fn table_data() -> SelectStatement {
         .column((Fk::Table, Fk::ReferencedTableSchema))
         .column((Fk::Table, Fk::ReferencedTableName))
         .column((Fk::Table, Fk::ReferencedColumnName))
-        .from(("information_schema", TableConstraints::Table))
+        .from((InformationSchema::Table, TableConstraints::Table))
         .left_join(
-            ("information_schema", Columns::Table),
+            (InformationSchema::Table, Columns::Table),
             all![
-                Expr::col(("information_schema", Tables::Table, Tables::TableName,)).equals((
-                    "information_schema",
+                Expr::col((InformationSchema::Table, Tables::Table, Tables::TableName,)).equals((
+                    InformationSchema::Table,
                     Columns::Table,
                     Columns::TableName,
                 )),
-                Expr::col(("information_schema", Tables::Table, Tables::TableSchema,)).equals((
-                    "information_schema",
+                Expr::col((InformationSchema::Table, Tables::Table, Tables::TableSchema,)).equals((
+                    InformationSchema::Table,
                     Columns::Table,
                     Columns::TableSchema,
                 ))
@@ -231,11 +236,11 @@ pub fn table_data() -> SelectStatement {
             primary_key_constraint(),
             Pk::Table,
             all![
-                Expr::col(("information_schema", Columns::Table, Columns::TableName))
+                Expr::col((InformationSchema::Table, Columns::Table, Columns::TableName))
                     .equals((Pk::Table, Pk::TableName)),
-                Expr::col(("information_schema", Columns::Table, Columns::ColumnName))
+                Expr::col((InformationSchema::Table, Columns::Table, Columns::ColumnName))
                     .equals((Pk::Table, Pk::ColumnName)),
-                Expr::col(("information_schema", Columns::Table, Columns::TableSchema))
+                Expr::col((InformationSchema::Table, Columns::Table, Columns::TableSchema))
                     .equals((Pk::Table, Pk::TableSchema)),
             ],
         )
@@ -244,31 +249,31 @@ pub fn table_data() -> SelectStatement {
             foreign_key_constraint(),
             Fk::Table,
             all![
-                Expr::col(("information_schema", Columns::Table, Columns::TableName))
+                Expr::col((InformationSchema::Table, Columns::Table, Columns::TableName))
                     .equals((Fk::Table, Fk::TableName)),
-                Expr::col(("information_schema", Columns::Table, Columns::ColumnName))
+                Expr::col((InformationSchema::Table, Columns::Table, Columns::ColumnName))
                     .equals((Fk::Table, Fk::ColumnName)),
-                Expr::col(("information_schema", Columns::Table, Columns::TableSchema))
+                Expr::col((InformationSchema::Table, Columns::Table, Columns::TableSchema))
                     .equals((Fk::Table, Fk::TableSchema)),
             ],
         )
         .and_where(
-            Expr::col(("information_schema", Tables::Table, Tables::TableSchema))
-                .is_not_in(["information_schema"]),
+            Expr::col((InformationSchema::Table, Tables::Table, Tables::TableSchema))
+                .is_not_in([InformationSchema::Table.to_string()]),
         )
         .order_by_columns(vec![
             (
-                ("information_schema", Tables::Table, Tables::TableSchema),
+                (InformationSchema::Table, Tables::Table, Tables::TableSchema),
                 Asc,
             ),
             (
-                ("information_schema", Tables::Table, Tables::TableName),
+                (InformationSchema::Table, Tables::Table, Tables::TableName),
                 Asc,
             ),
         ])
         .order_by(
             (
-                "information_schema",
+                InformationSchema::Table,
                 Columns::Table,
                 Columns::OrdinalPosition,
             ),
