@@ -1,4 +1,5 @@
-use sea_query::{Expr, ExprTrait, Iden, PostgresQueryBuilder, Query, QueryBuilder};
+use sea_query::JoinOn::Condition;
+use sea_query::{all, Cond, Expr, ExprTrait, Iden, PostgresQueryBuilder, Query, QueryBuilder};
 
 #[derive(Iden)]
 pub enum Tables {
@@ -15,7 +16,8 @@ pub enum Columns {
 pub enum TableConstraints {
     Table,
     ConstraintName,
-    ConstraintType
+    ConstraintType,
+    TableSchema,
 }
 
 #[derive(Iden)]
@@ -25,6 +27,15 @@ pub enum KeyColumnUsage {
     TableName,
     ColumnName,
     TableSchema,
+}
+
+#[derive(Iden)]
+pub enum ConstraintColumnUsage {
+    Table,
+    TableSchema,
+    TableName,
+    ColumnName,
+    ConstraintName,
 }
 
 pub fn information_schema() -> String {
@@ -55,7 +66,96 @@ pub fn primary_key_constraint<T: QueryBuilder>(builder: T) -> String {
                 "information_schema",
                 TableConstraints::Table,
                 TableConstraints::ConstraintType,
-            )).equals("PRIMARY KEY"),
+            ))
+            .equals("PRIMARY KEY"),
+        )
+        .to_string(builder)
+}
+
+pub fn foreign_key_constraint<T: QueryBuilder>(builder: T) -> String {
+    Query::select()
+        .column((KeyColumnUsage::Table, KeyColumnUsage::ColumnName))
+        .column((KeyColumnUsage::Table, KeyColumnUsage::TableName))
+        .column((KeyColumnUsage::Table, KeyColumnUsage::TableSchema))
+        .expr_as(
+            Expr::col((
+                ConstraintColumnUsage::Table,
+                ConstraintColumnUsage::TableSchema,
+            )),
+            "referenced_table_schema",
+        )
+        .expr_as(
+            Expr::col((
+                ConstraintColumnUsage::Table,
+                ConstraintColumnUsage::TableName,
+            )),
+            "referenced_table_name",
+        )
+        .expr_as(
+            Expr::col((
+                ConstraintColumnUsage::Table,
+                ConstraintColumnUsage::ColumnName,
+            )),
+            "referenced_column_name",
+        )
+        .from(("information_schema", TableConstraints::Table))
+        .inner_join(
+            ("information_schema", KeyColumnUsage::Table),
+            all![
+                Expr::col((
+                    "information_schema",
+                    TableConstraints::Table,
+                    TableConstraints::ConstraintName,
+                ))
+                .equals((
+                    "information_schema",
+                    KeyColumnUsage::Table,
+                    KeyColumnUsage::ConstraintName,
+                )),
+                Expr::col((
+                    "information_schema",
+                    TableConstraints::Table,
+                    TableConstraints::TableSchema,
+                ))
+                .equals((
+                    "information_schema",
+                    KeyColumnUsage::Table,
+                    KeyColumnUsage::TableSchema,
+                ))
+            ],
+        )
+        .inner_join(
+            ("information_schema", ConstraintColumnUsage::Table),
+            all![
+                Expr::col((
+                    "information_schema",
+                    TableConstraints::Table,
+                    TableConstraints::ConstraintName,
+                ))
+                .equals((
+                    "information_schema",
+                    ConstraintColumnUsage::Table,
+                    ConstraintColumnUsage::ConstraintName,
+                )),
+                Expr::col((
+                    "information_schema",
+                    TableConstraints::Table,
+                    TableConstraints::TableSchema,
+                ))
+                .equals((
+                    "information_schema",
+                    ConstraintColumnUsage::Table,
+                    ConstraintColumnUsage::TableSchema,
+                ))
+            ],
+        )
+        .and_where(
+            Expr::col((
+                "information_schema",
+                TableConstraints::Table,
+                TableConstraints::ConstraintType,
+            ))
+            .equals("FOREIGN KEY"),
         )
         .to_string(builder)
 }
@@ -67,8 +167,14 @@ mod tests {
     #[test]
     fn test_primary_key_constraint() {
         let expected = r#"SELECT "key_column_usage"."table_name", "key_column_usage"."column_name", "key_column_usage"."table_schema" FROM "information_schema"."table_constraints" INNER JOIN "information_schema"."key_column_usage" ON "information_schema"."table_constraints"."constraint_name" = "information_schema"."key_column_usage"."constraint_name" WHERE "information_schema"."table_constraints"."constraint_type" = "PRIMARY KEY""#;
+        assert_eq!(primary_key_constraint(PostgresQueryBuilder), expected);
+    }
+
+    #[test]
+    fn test_foreign_key_constraint() {
+        let expected = r#"SELECT "key_column_usage"."column_name", "key_column_usage"."table_name", "key_column_usage"."table_schema", "constraint_column_usage"."table_schema" AS "referenced_table_schema", "constraint_column_usage"."table_name" AS "referenced_table_name", "constraint_column_usage"."column_name" AS "referenced_column_name" FROM "information_schema"."table_constraints" INNER JOIN "information_schema"."key_column_usage" ON "information_schema"."table_constraints"."constraint_name" = "information_schema"."key_column_usage"."constraint_name" AND "information_schema"."table_constraints"."table_schema" = "information_schema"."key_column_usage"."table_schema" INNER JOIN "information_schema"."constraint_column_usage" ON "information_schema"."table_constraints"."constraint_name" = "information_schema"."constraint_column_usage"."constraint_name" AND "information_schema"."table_constraints"."table_schema" = "information_schema"."constraint_column_usage"."table_schema" WHERE "information_schema"."table_constraints"."constraint_type" = "FOREIGN KEY""#;
         assert_eq!(
-            primary_key_constraint(PostgresQueryBuilder),
+            foreign_key_constraint(PostgresQueryBuilder),
             expected
         );
     }
