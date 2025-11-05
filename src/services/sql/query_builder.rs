@@ -1,6 +1,6 @@
 use sea_query::JoinType::LeftJoin;
 use sea_query::Order::Asc;
-use sea_query::{all, Expr, ExprTrait, Iden, Query, SelectStatement};
+use sea_query::{all, Asterisk, Expr, ExprTrait, Iden, Query, QueryBuilder, SelectStatement};
 
 #[derive(Iden)]
 pub enum Tables {
@@ -97,7 +97,7 @@ pub fn primary_key_constraint() -> SelectStatement {
                 TableConstraints::Table,
                 TableConstraints::ConstraintType,
             ))
-            .eq ("PRIMARY KEY"),
+            .eq("PRIMARY KEY"),
         )
         .to_owned()
 }
@@ -291,6 +291,13 @@ pub fn table_data() -> SelectStatement {
         .to_owned()
 }
 
+pub fn table_count(table_name: String) -> SelectStatement {
+    Query::select()
+        .expr(Expr::col(Asterisk).count())
+        .from(table_name)
+        .to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,5 +400,14 @@ mod tests {
         "#;
         let actual = table_data().to_string(PostgresQueryBuilder);
         assert_eq!(normalize_sql(&actual), normalize_sql(expected));
+    }
+
+    #[test]
+    fn test_table_count_postgres() {
+        let expected = r#"SELECT COUNT(*) FROM "test""#;
+        assert_eq!(
+            table_count("test".to_string()).to_string(PostgresQueryBuilder),
+            expected
+        );
     }
 }

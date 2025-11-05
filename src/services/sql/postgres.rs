@@ -4,6 +4,8 @@ use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError}
 use crate::services::sql::field_decoder::FieldDecoder;
 use crate::services::sql::filter_handler::FilterHandler;
 use crate::services::sql::models::{ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow, UpdateData};
+use crate::services::sql::query_builder::table_count;
+use sea_query::PostgresQueryBuilder;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Column, Pool, Postgres, Row};
 use std::collections::{HashMap, HashSet};
@@ -635,9 +637,7 @@ impl ConnectionPool for PostgresConnectionPool {
     }
 
     async fn table_count(&self, table_name: String) -> Result<u64, ConnectionPoolError> {
-        // Escape table name to prevent SQL injection
-        let escaped_table_name = table_name.replace("'", "''");
-        let query = format!("SELECT COUNT(*) FROM {}", escaped_table_name);
+        let query = table_count(table_name.clone()).to_string(PostgresQueryBuilder);
 
         sqlx::query(&query)
             .fetch_one(&self.pool)
