@@ -4,7 +4,7 @@ use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError}
 use crate::services::sql::field_decoder::FieldDecoder;
 use crate::services::sql::filter_handler::FilterHandler;
 use crate::services::sql::models::{ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow, UpdateData};
-use crate::services::sql::query_builder::table_count;
+use crate::services::sql::query_builder::{table_count, table_columns};
 use sea_query::PostgresQueryBuilder;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Column, Pool, Postgres, Row};
@@ -90,59 +90,12 @@ impl PostgresConnectionPool {
         table_name: &str,
         table_schema: Option<&str>,
     ) -> Result<Vec<ColumnInfo>, ConnectionPoolError> {
-        let schema_filter = if let Some(schema) = table_schema {
-            format!("AND c.table_schema = '{}'", schema.replace("'", "''"))
-        } else {
-            String::new()
-        };
-
-        let query = format!(
-            r#"
-            SELECT
-                c.column_name,
-                c.data_type,
-                c.udt_name,
-                c.is_nullable,
-                c.column_default,
-                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
-                fk.referenced_table_schema,
-                fk.referenced_table_name,
-                fk.referenced_column_name
-            FROM information_schema.columns c
-            LEFT JOIN (
-                SELECT ku.table_name, ku.column_name, ku.table_schema
-                FROM information_schema.table_constraints tc
-                JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name
-                WHERE tc.constraint_type = 'PRIMARY KEY'
-            ) pk ON c.table_name = pk.table_name
-                AND c.column_name = pk.column_name
-                AND c.table_schema = pk.table_schema
-            LEFT JOIN (
-                SELECT
-                    kcu.column_name,
-                    kcu.table_name,
-                    kcu.table_schema,
-                    ccu.table_schema AS referenced_table_schema,
-                    ccu.table_name AS referenced_table_name,
-                    ccu.column_name AS referenced_column_name
-                FROM information_schema.table_constraints AS tc
-                JOIN information_schema.key_column_usage AS kcu
-                    ON tc.constraint_name = kcu.constraint_name
-                    AND tc.table_schema = kcu.table_schema
-                JOIN information_schema.constraint_column_usage AS ccu
-                    ON ccu.constraint_name = tc.constraint_name
-                    AND ccu.table_schema = tc.table_schema
-                WHERE tc.constraint_type = 'FOREIGN KEY'
-            ) fk ON c.table_name = fk.table_name
-                AND c.column_name = fk.column_name
-                AND c.table_schema = fk.table_schema
-            WHERE c.table_name = '{}'
-            {}
-            ORDER BY c.ordinal_position
-            "#,
-            table_name.replace("'", "''"),
-            schema_filter
-        );
+        // Use the modular sea-query builder instead of raw SQL
+        let query = table_columns(
+            table_name.to_string(),
+            table_schema.map(|s| s.to_string()),
+        )
+        .to_string(PostgresQueryBuilder);
 
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
