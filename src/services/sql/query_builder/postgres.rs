@@ -1,16 +1,16 @@
 use sea_query::JoinType::LeftJoin;
 use sea_query::Order::Asc;
-use sea_query::{all, Asterisk, Expr, ExprTrait, Iden, Query, SelectStatement};
+use sea_query::{all, Cond, Expr, ExprTrait, Iden, Query, SelectStatement};
 
 #[derive(Iden)]
-pub enum Tables {
+enum Tables {
     Table,
     TableName,
     TableSchema,
 }
 
 #[derive(Iden)]
-pub enum Columns {
+enum Columns {
     Table,
     TableName,
     TableSchema,
@@ -23,7 +23,7 @@ pub enum Columns {
 }
 
 #[derive(Iden)]
-pub enum TableConstraints {
+enum TableConstraints {
     Table,
     ConstraintName,
     ConstraintType,
@@ -31,7 +31,7 @@ pub enum TableConstraints {
 }
 
 #[derive(Iden)]
-pub enum KeyColumnUsage {
+enum KeyColumnUsage {
     Table,
     ConstraintName,
     TableName,
@@ -40,7 +40,7 @@ pub enum KeyColumnUsage {
 }
 
 #[derive(Iden)]
-pub enum ConstraintColumnUsage {
+enum ConstraintColumnUsage {
     Table,
     TableSchema,
     TableName,
@@ -49,7 +49,7 @@ pub enum ConstraintColumnUsage {
 }
 
 #[derive(Iden)]
-pub enum Pk {
+enum Pk {
     Table,
     TableName,
     ColumnName,
@@ -57,7 +57,7 @@ pub enum Pk {
 }
 
 #[derive(Iden)]
-pub enum Fk {
+enum Fk {
     Table,
     TableName,
     ColumnName,
@@ -68,8 +68,31 @@ pub enum Fk {
 }
 
 #[derive(Iden)]
-pub enum InformationSchema {
+enum InformationSchema {
     Table,
+}
+
+#[derive(Iden)]
+enum PgType {
+    Table,
+    Oid,
+    Typnamespace,
+    Typname,
+}
+
+#[derive(Iden)]
+enum PgEnum {
+    Table,
+    Enumlabel,
+    Enumtypid,
+    Enumsortorder,
+}
+
+#[derive(Iden)]
+enum PgNamespace {
+    Table,
+    Oid,
+    Nspname,
 }
 
 pub fn primary_key_constraint() -> SelectStatement {
@@ -258,14 +281,17 @@ pub fn table_columns(table_name: String, table_schema: Option<String>) -> Select
     let mut query = build_column_info_base();
 
     query.and_where(
-        Expr::col((InformationSchema::Table, Columns::Table, Columns::TableName))
-            .eq(table_name),
+        Expr::col((InformationSchema::Table, Columns::Table, Columns::TableName)).eq(table_name),
     );
 
     if let Some(schema) = table_schema {
         query.and_where(
-            Expr::col((InformationSchema::Table, Columns::Table, Columns::TableSchema))
-                .eq(schema),
+            Expr::col((
+                InformationSchema::Table,
+                Columns::Table,
+                Columns::TableSchema,
+            ))
+            .eq(schema),
         );
     }
 
@@ -379,6 +405,32 @@ pub fn tables() -> SelectStatement {
             ),
             Asc,
         )
+        .to_owned()
+}
+
+pub fn enum_values(enum_name: String, schema: Option<String>) -> SelectStatement {
+    let mut conditions = Cond::all().add(Expr::col((PgType::Table, PgType::Typname)).eq(enum_name));
+    if let Some(schema) = schema {
+        conditions =
+            conditions.add(Expr::col((PgNamespace::Table, PgNamespace::Nspname)).eq(schema));
+    }
+    Query::select()
+        .expr_as(
+            Expr::col((PgEnum::Enumlabel, PgEnum::Enumlabel)),
+            "enum_value",
+        )
+        .from((InformationSchema::Table, PgType::Table))
+        .inner_join(
+            (InformationSchema::Table, PgEnum::Table),
+            Expr::col((PgEnum::Table, PgEnum::Enumtypid)).equals((PgType::Table, PgType::Oid)),
+        )
+        .inner_join(
+            (InformationSchema::Table, PgNamespace::Table),
+            Expr::col((PgNamespace::Table, PgNamespace::Oid))
+                .equals((PgType::Table, PgType::Typnamespace)),
+        )
+        .cond_where(conditions)
+        .order_by((PgEnum::Table, PgEnum::Enumsortorder), Asc)
         .to_owned()
 }
 
@@ -639,6 +691,42 @@ mod tests {
             ORDER BY "information_schema"."columns"."ordinal_position" ASC
         "#;
         let actual = table_columns("users".to_string(), Some("public".to_string()))
+            .to_string(PostgresQueryBuilder);
+        assert_eq!(normalize_sql(&actual), normalize_sql(expected));
+    }
+
+    #[test]
+    fn test_enum_values_postgres() {
+        let expected = r#"
+            SELECT
+                "enumlabel"."enumlabel" AS "enum_value"
+            FROM "information_schema"."pg_type"
+            INNER JOIN "information_schema"."pg_enum"
+                ON "pg_enum"."enumtypid" = "pg_type"."oid"
+            INNER JOIN "information_schema"."pg_namespace"
+                ON "pg_namespace"."oid" = "pg_type"."typnamespace"
+            WHERE "pg_type"."typname" = 'status_enum'
+            ORDER BY "pg_enum"."enumsortorder" ASC
+        "#;
+        let actual = enum_values("status_enum".to_string(), None).to_string(PostgresQueryBuilder);
+        assert_eq!(normalize_sql(&actual), normalize_sql(expected));
+    }
+
+    #[test]
+    fn test_enum_values_with_schema_postgres() {
+        let expected = r#"
+            SELECT
+                "enumlabel"."enumlabel" AS "enum_value"
+            FROM "information_schema"."pg_type"
+            INNER JOIN "information_schema"."pg_enum"
+                ON "pg_enum"."enumtypid" = "pg_type"."oid"
+            INNER JOIN "information_schema"."pg_namespace"
+                ON "pg_namespace"."oid" = "pg_type"."typnamespace"
+            WHERE "pg_type"."typname" = 'status_enum'
+                AND "pg_namespace"."nspname" = 'public'
+            ORDER BY "pg_enum"."enumsortorder" ASC
+        "#;
+        let actual = enum_values("status_enum".to_string(), Some("public".to_string()))
             .to_string(PostgresQueryBuilder);
         assert_eq!(normalize_sql(&actual), normalize_sql(expected));
     }

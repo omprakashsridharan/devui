@@ -3,9 +3,11 @@ use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
 use crate::services::sql::field_decoder::FieldDecoder;
 use crate::services::sql::filter_handler::FilterHandler;
-use crate::services::sql::models::{ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow, UpdateData};
-use crate::services::sql::query_builder::postgres::{table_columns, tables};
+use crate::services::sql::models::{
+    ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow, UpdateData,
+};
 use crate::services::sql::query_builder::common::table_count;
+use crate::services::sql::query_builder::postgres::{enum_values, table_columns, tables};
 use sea_query::PostgresQueryBuilder;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Column, Pool, Postgres, Row};
@@ -51,25 +53,8 @@ impl PostgresConnectionPool {
         type_name: &str,
         type_schema: Option<&str>,
     ) -> Result<Vec<String>, ConnectionPoolError> {
-        let schema_filter = if let Some(schema) = type_schema {
-            format!("AND n.nspname = '{}'", schema.replace("'", "''"))
-        } else {
-            String::new()
-        };
-
-        let query = format!(
-            r#"
-            SELECT e.enumlabel AS enum_value
-            FROM pg_type t
-            JOIN pg_enum e ON t.oid = e.enumtypid
-            JOIN pg_namespace n ON n.oid = t.typnamespace
-            WHERE t.typname = '{}'
-            {}
-            ORDER BY e.enumsortorder
-            "#,
-            type_name.replace("'", "''"),
-            schema_filter
-        );
+        let query = enum_values(type_name.to_string(), type_schema.map(|s| s.to_string()))
+            .to_string(PostgresQueryBuilder);
 
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -92,11 +77,8 @@ impl PostgresConnectionPool {
         table_schema: Option<&str>,
     ) -> Result<Vec<ColumnInfo>, ConnectionPoolError> {
         // Use the modular sea-query builder instead of raw SQL
-        let query = table_columns(
-            table_name.to_string(),
-            table_schema.map(|s| s.to_string()),
-        )
-        .to_string(PostgresQueryBuilder);
+        let query = table_columns(table_name.to_string(), table_schema.map(|s| s.to_string()))
+            .to_string(PostgresQueryBuilder);
 
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -120,10 +102,7 @@ impl PostgresConnectionPool {
 
             // Fetch enum values if this is a USER-DEFINED type
             let enum_values = if data_type == "USER-DEFINED" {
-                match self
-                    .fetch_enum_values(&udt_name, table_schema)
-                    .await
-                {
+                match self.fetch_enum_values(&udt_name, table_schema).await {
                     Ok(values) if !values.is_empty() => Some(values),
                     _ => None,
                 }
@@ -355,10 +334,8 @@ impl PostgresConnectionPool {
         columns: &[ColumnInfo],
         primary_key_values: &HashMap<String, String>,
     ) -> Result<String, ConnectionPoolError> {
-        let primary_key_columns: Vec<&ColumnInfo> = columns
-            .iter()
-            .filter(|col| col.is_primary_key)
-            .collect();
+        let primary_key_columns: Vec<&ColumnInfo> =
+            columns.iter().filter(|col| col.is_primary_key).collect();
 
         if primary_key_columns.is_empty() {
             return Err(ConnectionPoolError::SqlxError(sqlx::Error::Configuration(
@@ -370,10 +347,9 @@ impl PostgresConnectionPool {
 
         for pk_col in &primary_key_columns {
             let pk_value = primary_key_values.get(&pk_col.name).ok_or_else(|| {
-                ConnectionPoolError::SqlxError(sqlx::Error::Configuration(format!(
-                    "Missing primary key value for column: {}",
-                    pk_col.name
-                ).into()))
+                ConnectionPoolError::SqlxError(sqlx::Error::Configuration(
+                    format!("Missing primary key value for column: {}", pk_col.name).into(),
+                ))
             })?;
 
             let formatted_value = Self::format_sql_value(pk_value, &pk_col.data_type);
@@ -517,7 +493,11 @@ impl ConnectionPool for PostgresConnectionPool {
 
         // Build the final query (table_name should be validated/escaped by caller)
         let escaped_table_name = table_name.replace("'", "''");
-        let mut query = format!("SELECT {} FROM {}", select_parts.join(", "), escaped_table_name);
+        let mut query = format!(
+            "SELECT {} FROM {}",
+            select_parts.join(", "),
+            escaped_table_name
+        );
 
         if !where_clauses.is_empty() {
             query.push_str(&format!(" WHERE {}", where_clauses.join(" AND ")));
@@ -569,12 +549,18 @@ impl ConnectionPool for PostgresConnectionPool {
         }
 
         // Fetch column information for the table
-        let columns = self.fetch_table_columns(&update_data.table_name, None).await?;
+        let columns = self
+            .fetch_table_columns(&update_data.table_name, None)
+            .await?;
 
         if columns.is_empty() {
             tracing::warn!("No columns found for table: {}", update_data.table_name);
             return Err(ConnectionPoolError::SqlxError(sqlx::Error::Configuration(
-                format!("Table '{}' not found or has no columns", update_data.table_name).into(),
+                format!(
+                    "Table '{}' not found or has no columns",
+                    update_data.table_name
+                )
+                .into(),
             )));
         }
 
@@ -584,21 +570,16 @@ impl ConnectionPool for PostgresConnectionPool {
         // Process each change
         for (idx, change) in update_data.changes.iter().enumerate() {
             // Build WHERE clause from primary key values
-            let where_clause = Self::build_update_where_clause(&columns, &change.primary_key_values)?;
+            let where_clause =
+                Self::build_update_where_clause(&columns, &change.primary_key_values)?;
 
             // Build SET clause from changed columns
-            let set_parts = Self::build_update_set_clause(
-                &columns,
-                &change.updated_row,
-                &change.original_row,
-            );
+            let set_parts =
+                Self::build_update_set_clause(&columns, &change.updated_row, &change.original_row);
 
             // Skip if no columns changed
             if set_parts.is_empty() {
-                tracing::warn!(
-                    "Change {} has no modified columns, skipping",
-                    idx
-                );
+                tracing::warn!("Change {} has no modified columns, skipping", idx);
                 continue;
             }
 
@@ -617,11 +598,7 @@ impl ConnectionPool for PostgresConnectionPool {
                 .execute(&self.pool)
                 .await
                 .map_err(|e| {
-                    tracing::error!(
-                        "Failed to execute UPDATE for change {}: {}",
-                        idx,
-                        e
-                    );
+                    tracing::error!("Failed to execute UPDATE for change {}: {}", idx, e);
                     ConnectionPoolError::SqlxError(e)
                 })?;
         }
