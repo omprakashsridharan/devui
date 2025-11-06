@@ -17,12 +17,6 @@ impl FieldDecoder {
         let type_name = type_info.name().to_ascii_uppercase();
         let column_name = column.name();
 
-        tracing::debug!(
-            "Decoding field: {} (type: {})",
-            column_name,
-            type_name
-        );
-
         match type_name.as_str() {
             // Integer types
             "INT2" | "SMALLINT" => Self::decode_i16(row, column_name),
@@ -34,7 +28,20 @@ impl FieldDecoder {
             "FLOAT8" | "DOUBLE PRECISION" => Self::decode_f64(row, column_name),
 
             // Decimal/Numeric types
-            "NUMERIC" | "DECIMAL" | "MONEY" => Self::decode_numeric(row, column_name),
+            "NUMERIC" | "DECIMAL" => Self::decode_numeric(row, column_name),
+            // MONEY is cast to text in SELECT queries, so try decoding as text first
+            "MONEY" => {
+                // Try to decode as text first (when cast to text), then fall back to numeric
+                match row.try_get::<Option<String>, _>(column_name) {
+                    Ok(value) => Ok(value.unwrap_or_default()),
+                    Err(_) => {
+                        match row.try_get::<String, _>(column_name) {
+                            Ok(value) => Ok(value),
+                            Err(_) => Self::decode_numeric(row, column_name),
+                        }
+                    }
+                }
+            },
 
             // Boolean types
             "BOOL" | "BOOLEAN" => Self::decode_bool(row, column_name),
@@ -70,8 +77,31 @@ impl FieldDecoder {
             "INTERVAL" => Self::decode_interval(row, column_name),
 
             // JSON types
-            "JSON" => Self::decode_json(row, column_name),
-            "JSONB" => Self::decode_jsonb(row, column_name),
+            // JSON/JSONB are cast to text in SELECT queries, so try decoding as text first
+            "JSON" => {
+                // Try to decode as text first (when cast to text), then fall back to JSON
+                match row.try_get::<Option<String>, _>(column_name) {
+                    Ok(value) => Ok(value.unwrap_or_default()),
+                    Err(_) => {
+                        match row.try_get::<String, _>(column_name) {
+                            Ok(value) => Ok(value),
+                            Err(_) => Self::decode_json(row, column_name),
+                        }
+                    }
+                }
+            },
+            "JSONB" => {
+                // Try to decode as text first (when cast to text), then fall back to JSONB
+                match row.try_get::<Option<String>, _>(column_name) {
+                    Ok(value) => Ok(value.unwrap_or_default()),
+                    Err(_) => {
+                        match row.try_get::<String, _>(column_name) {
+                            Ok(value) => Ok(value),
+                            Err(_) => Self::decode_jsonb(row, column_name),
+                        }
+                    }
+                }
+            },
 
             // UUID type
             "UUID" => Self::decode_uuid(row, column_name),
@@ -124,24 +154,24 @@ impl FieldDecoder {
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: i16 = row.try_get(column_name)?;
-        Ok(value.to_string())
+        let value: Option<i16> = row.try_get(column_name)?;
+        Ok(value.map(|v| v.to_string()).unwrap_or_default())
     }
 
     fn decode_i32(
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: i32 = row.try_get(column_name)?;
-        Ok(value.to_string())
+        let value: Option<i32> = row.try_get(column_name)?;
+        Ok(value.map(|v| v.to_string()).unwrap_or_default())
     }
 
     fn decode_i64(
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: i64 = row.try_get(column_name)?;
-        Ok(value.to_string())
+        let value: Option<i64> = row.try_get(column_name)?;
+        Ok(value.map(|v| v.to_string()).unwrap_or_default())
     }
 
     // Floating point decoders
@@ -149,16 +179,16 @@ impl FieldDecoder {
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: f32 = row.try_get(column_name)?;
-        Ok(value.to_string())
+        let value: Option<f32> = row.try_get(column_name)?;
+        Ok(value.map(|v| v.to_string()).unwrap_or_default())
     }
 
     fn decode_f64(
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: f64 = row.try_get(column_name)?;
-        Ok(value.to_string())
+        let value: Option<f64> = row.try_get(column_name)?;
+        Ok(value.map(|v| v.to_string()).unwrap_or_default())
     }
     // Numeric decoder
     fn decode_numeric(
@@ -166,12 +196,13 @@ impl FieldDecoder {
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
         // Try to decode as Decimal first, then fall back to string
-        match row.try_get::<BigDecimal, _>(column_name) {
-            Ok(value) => Ok(value.to_string()),
+        match row.try_get::<Option<BigDecimal>, _>(column_name) {
+            Ok(Some(value)) => Ok(value.to_string()),
+            Ok(None) => Ok(String::new()),
             Err(_) => {
                 // Fallback to string if Decimal fails
-                let value: String = row.try_get(column_name)?;
-                Ok(value)
+                let value: Option<String> = row.try_get(column_name)?;
+                Ok(value.unwrap_or_default())
             }
         }
     }
@@ -181,8 +212,8 @@ impl FieldDecoder {
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: bool = row.try_get(column_name)?;
-        Ok(value.to_string())
+        let value: Option<bool> = row.try_get(column_name)?;
+        Ok(value.map(|v| v.to_string()).unwrap_or_default())
     }
 
     // Text decoder
@@ -199,9 +230,14 @@ impl FieldDecoder {
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: Vec<u8> = row.try_get(column_name)?;
-        let hex_string = format!("\\x{}", hex::encode(&value));
-        Ok(hex_string)
+        let value: Option<Vec<u8>> = row.try_get(column_name)?;
+        match value {
+            Some(bytes) => {
+                let hex_string = format!("\\x{}", hex::encode(&bytes));
+                Ok(hex_string)
+            }
+            None => Ok(String::new()),
+        }
     }
 
     // Bit string decoder
@@ -219,32 +255,32 @@ impl FieldDecoder {
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: NaiveDate = row.try_get(column_name)?;
-        Ok(value.to_string())
+        let value: Option<NaiveDate> = row.try_get(column_name)?;
+        Ok(value.map(|v| v.to_string()).unwrap_or_default())
     }
 
     fn decode_time(
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: NaiveTime = row.try_get(column_name)?;
-        Ok(value.to_string())
+        let value: Option<NaiveTime> = row.try_get(column_name)?;
+        Ok(value.map(|v| v.to_string()).unwrap_or_default())
     }
 
     fn decode_timestamp(
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: NaiveDateTime = row.try_get(column_name)?;
-        Ok(value.to_string())
+        let value: Option<NaiveDateTime> = row.try_get(column_name)?;
+        Ok(value.map(|v| v.to_string()).unwrap_or_default())
     }
 
     fn decode_timestamptz(
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: DateTime<Utc> = row.try_get(column_name)?;
-        Ok(value.to_string())
+        let value: Option<DateTime<Utc>> = row.try_get(column_name)?;
+        Ok(value.map(|v| v.to_string()).unwrap_or_default())
     }
 
     fn decode_timetz(

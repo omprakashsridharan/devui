@@ -229,6 +229,11 @@ impl PostgresConnectionPool {
                     || data_type_upper == "TSTZRANGE"
                     || data_type_upper == "DATERANGE"
                     || data_type_upper == "XML"
+                    // JSON types need to be cast to text
+                    || data_type_upper == "JSON"
+                    || data_type_upper == "JSONB"
+                    // MONEY type needs to be cast to text
+                    || data_type_upper == "MONEY"
                     // TIME WITH TIME ZONE needs to be cast to text
                     || data_type_upper == "TIME WITH TIME ZONE"
                     || data_type_upper == "TIMETZ"
