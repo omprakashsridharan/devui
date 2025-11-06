@@ -22,8 +22,30 @@ services:
     networks:
       - devui-network
 
+  mysql:
+    image: mysql:8.0
+    container_name: devui-mysql-dev
+    environment:
+      MYSQL_ROOT_PASSWORD: devui_root_password
+      MYSQL_USER: devui_user
+      MYSQL_PASSWORD: devui_password
+      MYSQL_DATABASE: devui_sample_db
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init-db-mysql.sql:/docker-entrypoint-initdb.d/init-db-mysql.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "devui_user", "-pdevui_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - devui-network
+
 volumes:
   postgres_data:
+  mysql_data:
 
 networks:
   devui-network:
