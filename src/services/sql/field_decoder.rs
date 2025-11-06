@@ -17,6 +17,12 @@ impl FieldDecoder {
         let type_name = type_info.name().to_ascii_uppercase();
         let column_name = column.name();
 
+        tracing::debug!(
+            "Decoding field: {} (type: {})",
+            column_name,
+            type_name
+        );
+
         match type_name.as_str() {
             // Integer types
             "INT2" | "SMALLINT" => Self::decode_i16(row, column_name),
@@ -28,7 +34,7 @@ impl FieldDecoder {
             "FLOAT8" | "DOUBLE PRECISION" => Self::decode_f64(row, column_name),
 
             // Decimal/Numeric types
-            "NUMERIC" | "DECIMAL" => Self::decode_numeric(row, column_name),
+            "NUMERIC" | "DECIMAL" | "MONEY" => Self::decode_numeric(row, column_name),
 
             // Boolean types
             "BOOL" | "BOOLEAN" => Self::decode_bool(row, column_name),
@@ -41,6 +47,9 @@ impl FieldDecoder {
             // Binary types
             "BYTEA" => Self::decode_bytea(row, column_name),
 
+            // Bit string types
+            "BIT" | "BIT VARYING" | "VARBIT" => Self::decode_bit_string(row, column_name),
+
             // Date/Time types
             "DATE" => Self::decode_date(row, column_name),
             "TIME" | "TIME WITHOUT TIME ZONE" => Self::decode_time(row, column_name),
@@ -48,7 +57,17 @@ impl FieldDecoder {
             "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => {
                 Self::decode_timestamptz(row, column_name)
             }
-            "TIMETZ" | "TIME WITH TIME ZONE" => Self::decode_timetz(row, column_name),
+            "TIMETZ" | "TIME WITH TIME ZONE" => {
+                // TIME WITH TIME ZONE is cast to text in SELECT queries
+                // Try to decode as text first (when cast), then fall back to TIMETZ
+                match row.try_get::<Option<String>, _>(column_name) {
+                    Ok(value) => Ok(value.unwrap_or_default()),
+                    Err(_) => Self::decode_timetz(row, column_name),
+                }
+            },
+
+            // Interval type
+            "INTERVAL" => Self::decode_interval(row, column_name),
 
             // JSON types
             "JSON" => Self::decode_json(row, column_name),
@@ -57,8 +76,43 @@ impl FieldDecoder {
             // UUID type
             "UUID" => Self::decode_uuid(row, column_name),
 
+            // Network types
+            "INET" | "CIDR" | "MACADDR" | "MACADDR8" => Self::decode_network_type(row, column_name),
+
+            // Geometric types
+            "POINT" | "LINE" | "LSEG" | "BOX" | "PATH" | "POLYGON" | "CIRCLE" => {
+                Self::decode_geometric_type(row, column_name)
+            }
+
+            // Range types
+            "INT4RANGE" | "INT8RANGE" | "NUMRANGE" | "TSRANGE" | "TSTZRANGE" | "DATERANGE" => {
+                Self::decode_range_type(row, column_name)
+            }
+
+            // XML type
+            "XML" => Self::decode_xml(row, column_name),
+
             // Array types (basic support)
-            type_name if type_name.starts_with("_") => Self::decode_array(row, column_name),
+            // PostgreSQL array types can be detected by:
+            // 1. Type name starting with "_" (e.g., "_TEXT", "_INT4")
+            // 2. Type name ending with "[]" or containing "ARRAY"
+            // 3. Checking if it's an array type via type_info
+            // Arrays are cast to text in SELECT queries, so try decoding as text first
+            type_name if type_name.starts_with("_")
+                || type_name.ends_with("[]")
+                || type_name.contains("ARRAY") => {
+                // Try to decode as text first (when cast to text in SELECT)
+                match row.try_get::<Option<String>, _>(column_name) {
+                    Ok(value) => Ok(value.unwrap_or_default()),
+                    Err(_) => {
+                        // Try as non-nullable string
+                        match row.try_get::<String, _>(column_name) {
+                            Ok(value) => Ok(value),
+                            Err(_) => Self::decode_array(row, column_name),
+                        }
+                    }
+                }
+            }
 
             // Custom types (should be cast to text in query)
             _ => Self::decode_custom_type(row, column_name, &type_name),
@@ -150,6 +204,16 @@ impl FieldDecoder {
         Ok(hex_string)
     }
 
+    // Bit string decoder
+    fn decode_bit_string(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
+        // PostgreSQL returns bit strings as text (e.g., "10101010")
+        let value: Option<String> = row.try_get(column_name)?;
+        Ok(value.unwrap_or_default())
+    }
+
     // Date/Time decoders
     fn decode_date(
         row: &sqlx::postgres::PgRow,
@@ -187,9 +251,74 @@ impl FieldDecoder {
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        // TIME WITH TIME ZONE is complex, decode as string for now
-        let value: String = row.try_get(column_name)?;
-        Ok(value)
+        // TIME WITH TIME ZONE is complex, decode as string
+        // If cast to text in query, it will be TEXT type, otherwise try as TIMETZ
+        match row.try_get::<Option<String>, _>(column_name) {
+            Ok(value) => Ok(value.unwrap_or_default()),
+            Err(_) => {
+                // Try to decode as non-nullable string (when cast to text)
+                match row.try_get::<String, _>(column_name) {
+                    Ok(value) => Ok(value),
+                    Err(e) => {
+                        warn!(
+                            "Failed to decode TIME WITH TIME ZONE column {}: {}",
+                            column_name, e
+                        );
+                        Ok(String::new())
+                    }
+                }
+            }
+        }
+    }
+
+    // Interval decoder
+    fn decode_interval(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
+        // PostgreSQL returns INTERVAL as text (e.g., "1 day 2 hours 3 minutes")
+        let value: Option<String> = row.try_get(column_name)?;
+        Ok(value.unwrap_or_default())
+    }
+
+    // Network type decoder
+    fn decode_network_type(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
+        // PostgreSQL returns network types as text (e.g., "192.168.1.1", "192.168.1.0/24")
+        let value: Option<String> = row.try_get(column_name)?;
+        Ok(value.unwrap_or_default())
+    }
+
+    // Geometric type decoder
+    fn decode_geometric_type(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
+        // PostgreSQL returns geometric types as text (e.g., "(10,20)", "[(1,1),(2,2)]")
+        let value: Option<String> = row.try_get(column_name)?;
+        Ok(value.unwrap_or_default())
+    }
+
+    // Range type decoder
+    fn decode_range_type(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
+        // PostgreSQL returns range types as text (e.g., "[1,10)", "[2024-01-01,2024-12-31)")
+        let value: Option<String> = row.try_get(column_name)?;
+        Ok(value.unwrap_or_default())
+    }
+
+    // XML decoder
+    fn decode_xml(
+        row: &sqlx::postgres::PgRow,
+        column_name: &str,
+    ) -> Result<String, FieldDecodeError> {
+        // PostgreSQL returns XML as text
+        let value: Option<String> = row.try_get(column_name)?;
+        Ok(value.unwrap_or_default())
     }
 
     // JSON decoders
@@ -223,8 +352,37 @@ impl FieldDecoder {
         row: &sqlx::postgres::PgRow,
         column_name: &str,
     ) -> Result<String, FieldDecodeError> {
-        let value: String = row.try_get(column_name)?;
-        Ok(value)
+        // PostgreSQL arrays are returned as text when cast to text
+        // sqlx still sees the column type as an array, so we need to use try_get_by_index
+        // to bypass type checking, or use the raw value
+        // First, try to get the column index
+        let column_index = row
+            .columns()
+            .iter()
+            .position(|col| col.name() == column_name)
+            .ok_or_else(|| {
+                FieldDecodeError::SqlxError(sqlx::Error::ColumnNotFound(
+                    column_name.to_string().into(),
+                ))
+            })?;
+
+        // Try to decode as text using the index (bypasses type checking)
+        match row.try_get::<Option<String>, _>(column_index) {
+            Ok(value) => Ok(value.unwrap_or_default()),
+            Err(_) => {
+                // Try as non-nullable string
+                match row.try_get::<String, _>(column_index) {
+                    Ok(value) => Ok(value),
+                    Err(e) => {
+                        warn!(
+                            "Failed to decode array column {} as text: {}",
+                            column_name, e
+                        );
+                        Ok("[ARRAY DECODE ERROR]".to_string())
+                    }
+                }
+            }
+        }
     }
 
     // Custom type decoder with fallback strategies

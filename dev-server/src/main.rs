@@ -6,11 +6,23 @@ use tower_http::{
     cors::{AllowOrigin, AllowMethods, AllowHeaders, CorsLayer},
     trace::TraceLayer,
 };
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing
-    tracing_subscriber::fmt::init();
+    // Initialize tracing with DEBUG level by default
+    // You can override via RUST_LOG environment variable: RUST_LOG=info, RUST_LOG=debug, etc.
+    // Examples:
+    //   RUST_LOG=debug - Show all debug logs
+    //   RUST_LOG=info - Show info and above
+    //   RUST_LOG=devui::services::sql=debug - Show debug only for SQL services
+    tracing_subscriber::registry()
+        .with(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("debug")),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
     // Create database configuration with sample database from docker-compose
     // Make sure to start the database first: docker-compose up -d

@@ -73,6 +73,11 @@ enum InformationSchema {
 }
 
 #[derive(Iden)]
+enum PgCatalog {
+    Table,
+}
+
+#[derive(Iden)]
 enum PgType {
     Table,
     Oid,
@@ -384,8 +389,10 @@ pub fn tables() -> SelectStatement {
             ],
         )
         .and_where(
-            Expr::col((InformationSchema::Table, Tables::Table, Tables::TableSchema))
-                .is_not_in([InformationSchema::Table.to_string()]),
+            Expr::col((InformationSchema::Table, Tables::Table, Tables::TableSchema)).is_not_in([
+                InformationSchema::Table.to_string(),
+                PgCatalog::Table.to_string(),
+            ]),
         )
         .order_by_columns(vec![
             (
@@ -416,16 +423,16 @@ pub fn enum_values(enum_name: String, schema: Option<String>) -> SelectStatement
     }
     Query::select()
         .expr_as(
-            Expr::col((PgEnum::Enumlabel, PgEnum::Enumlabel)),
+            Expr::col((PgEnum::Table, PgEnum::Enumlabel)),
             "enum_value",
         )
-        .from((InformationSchema::Table, PgType::Table))
+        .from((PgCatalog::Table, PgType::Table))
         .inner_join(
-            (InformationSchema::Table, PgEnum::Table),
+            (PgCatalog::Table, PgEnum::Table),
             Expr::col((PgEnum::Table, PgEnum::Enumtypid)).equals((PgType::Table, PgType::Oid)),
         )
         .inner_join(
-            (InformationSchema::Table, PgNamespace::Table),
+            (PgCatalog::Table, PgNamespace::Table),
             Expr::col((PgNamespace::Table, PgNamespace::Oid))
                 .equals((PgType::Table, PgType::Typnamespace)),
         )
@@ -586,7 +593,7 @@ mod tests {
                 ON "information_schema"."columns"."table_name" = "fk"."table_name"
                 AND "information_schema"."columns"."column_name" = "fk"."column_name"
                 AND "information_schema"."columns"."table_schema" = "fk"."table_schema"
-            WHERE "information_schema"."tables"."table_schema" NOT IN ('information_schema')
+            WHERE "information_schema"."tables"."table_schema" NOT IN ('information_schema', 'pg_catalog')
             ORDER BY "information_schema"."tables"."table_schema" ASC, "information_schema"."tables"."table_name" ASC, "information_schema"."columns"."ordinal_position" ASC
         "#;
         let actual = tables().to_string(MysqlQueryBuilder);
@@ -699,11 +706,11 @@ mod tests {
     fn test_enum_values_postgres() {
         let expected = r#"
             SELECT
-                "enumlabel"."enumlabel" AS "enum_value"
-            FROM "information_schema"."pg_type"
-            INNER JOIN "information_schema"."pg_enum"
+                "pg_enum"."enumlabel" AS "enum_value"
+            FROM "pg_catalog"."pg_type"
+            INNER JOIN "pg_catalog"."pg_enum"
                 ON "pg_enum"."enumtypid" = "pg_type"."oid"
-            INNER JOIN "information_schema"."pg_namespace"
+            INNER JOIN "pg_catalog"."pg_namespace"
                 ON "pg_namespace"."oid" = "pg_type"."typnamespace"
             WHERE "pg_type"."typname" = 'status_enum'
             ORDER BY "pg_enum"."enumsortorder" ASC
@@ -716,11 +723,11 @@ mod tests {
     fn test_enum_values_with_schema_postgres() {
         let expected = r#"
             SELECT
-                "enumlabel"."enumlabel" AS "enum_value"
-            FROM "information_schema"."pg_type"
-            INNER JOIN "information_schema"."pg_enum"
+                "pg_enum"."enumlabel" AS "enum_value"
+            FROM "pg_catalog"."pg_type"
+            INNER JOIN "pg_catalog"."pg_enum"
                 ON "pg_enum"."enumtypid" = "pg_type"."oid"
-            INNER JOIN "information_schema"."pg_namespace"
+            INNER JOIN "pg_catalog"."pg_namespace"
                 ON "pg_namespace"."oid" = "pg_type"."typnamespace"
             WHERE "pg_type"."typname" = 'status_enum'
                 AND "pg_namespace"."nspname" = 'public'
