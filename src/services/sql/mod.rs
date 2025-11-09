@@ -2,7 +2,6 @@ pub mod config;
 pub mod connection_manager;
 pub mod connection_pool;
 pub mod field_decoder;
-pub mod filter_handler;
 pub mod models;
 mod postgres;
 pub mod router;

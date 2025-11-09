@@ -212,14 +212,6 @@ impl PostgresConnectionPool {
         select_parts
     }
 
-    /// Convert ColumnInfo to tuple format for filter handler
-    fn columns_to_tuples(columns: &[ColumnInfo]) -> Vec<(String, String)> {
-        columns
-            .iter()
-            .map(|col| (col.name.clone(), col.data_type.clone()))
-            .collect()
-    }
-
     /// Parse query result rows into TableRow structures
     fn parse_rows(rows: Vec<sqlx::postgres::PgRow>) -> Vec<TableRow> {
         let mut decode_errors = 0;
