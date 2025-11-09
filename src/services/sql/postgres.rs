@@ -4,7 +4,7 @@ use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError}
 use crate::services::sql::models::{
     ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow, UpdateData,
 };
-use crate::services::sql::query_builder::common::{table_count, table_data};
+use crate::services::sql::query_builder::common::{table_count, table_data, update_table};
 use crate::services::sql::query_builder::postgres::{enum_values, table_columns, tables};
 use sea_query::PostgresQueryBuilder;
 use sqlx::postgres::PgPoolOptions;
@@ -76,11 +76,6 @@ impl PostgresConnectionPool {
         table_name: &str,
         table_schema: Option<&str>,
     ) -> Result<Vec<ColumnInfo>, ConnectionPoolError> {
-        tracing::debug!(
-            "Fetching columns for table: {} (schema: {:?})",
-            table_name,
-            table_schema
-        );
 
         // Use the modular sea-query builder instead of raw SQL
         let query = table_columns(table_name.to_string(), table_schema.map(|s| s.to_string()))
@@ -93,8 +88,6 @@ impl PostgresConnectionPool {
                 tracing::error!("Failed to fetch columns for table {}: {}", table_name, e);
                 ConnectionPoolError::SqlxError(e)
             })?;
-
-        tracing::debug!("Fetched {} rows for table columns", rows.len());
 
         let mut columns = Vec::new();
         for row in rows {
@@ -195,253 +188,6 @@ impl PostgresConnectionPool {
         table_rows
     }
 
-    /// Escape SQL value to prevent injection
-    fn escape_sql_value(value: &str) -> String {
-        value.replace("'", "''")
-    }
-
-    /// Check if a string represents a numeric value
-    fn is_numeric(value: &str) -> bool {
-        value.parse::<f64>().is_ok()
-    }
-
-    /// Parse boolean value
-    fn parse_boolean(value: &str) -> Result<bool, String> {
-        match value.to_lowercase().as_str() {
-            "true" | "t" | "1" | "yes" | "y" | "on" => Ok(true),
-            "false" | "f" | "0" | "no" | "n" | "off" => Ok(false),
-            _ => Err(format!("Invalid boolean value: '{}'", value)),
-        }
-    }
-
-    /// Format SQL value based on data type for UPDATE statements
-    fn format_sql_value(value: &str, data_type: &str) -> String {
-        tracing::debug!("Formatting SQL value: '{}' (type: {})", value, data_type);
-
-        // Handle NULL values
-        if value.is_empty() || value == "null" || value == "NULL" {
-            tracing::debug!("Value is NULL");
-            return "NULL".to_string();
-        }
-
-        let formatted = match data_type.to_lowercase().as_str() {
-            // Numeric types - no quotes
-            "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real"
-            | "double precision" | "int2" | "int4" | "int8" | "float4" | "float8" => {
-                if Self::is_numeric(value) {
-                    value.to_string()
-                } else {
-                    // If not numeric, treat as text
-                    let escaped = Self::escape_sql_value(value);
-                    format!("'{}'", escaped)
-                }
-            }
-
-            // Boolean types - no quotes
-            "boolean" | "bool" => {
-                match Self::parse_boolean(value) {
-                    Ok(true) => "true".to_string(),
-                    Ok(false) => "false".to_string(),
-                    Err(_) => {
-                        // Invalid boolean, treat as text
-                        let escaped = Self::escape_sql_value(value);
-                        format!("'{}'", escaped)
-                    }
-                }
-            }
-
-            // UUID - quoted
-            "uuid" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // Text types - quoted and escaped
-            "text" | "varchar" | "char" | "character" | "character varying" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // Date/time types - quoted
-            "timestamp" | "timestamptz" | "date" | "time" | "timetz" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // Interval type - quoted
-            "interval" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // JSON types - quoted
-            "json" | "jsonb" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // Network types - quoted
-            "inet" | "cidr" | "macaddr" | "macaddr8" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // Geometric types - quoted
-            "point" | "line" | "lseg" | "box" | "path" | "polygon" | "circle" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // Range types - quoted
-            "int4range" | "int8range" | "numrange" | "tsrange" | "tstzrange" | "daterange" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // Bit string types - quoted
-            "bit" | "bit varying" | "varbit" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // XML type - quoted
-            "xml" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // Money type - quoted (treated as text for safety)
-            "money" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // User-defined types - quoted (will be cast to text if needed)
-            "user-defined" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // Default - quoted as text
-            _ => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-        };
-
-        tracing::debug!("Formatted value: '{}' -> '{}'", value, formatted);
-        formatted
-    }
-
-    /// Build SET clause for UPDATE statement from changed columns
-    fn build_update_set_clause(
-        columns: &[ColumnInfo],
-        updated_row: &HashMap<String, String>,
-        original_row: &HashMap<String, String>,
-    ) -> Vec<String> {
-        tracing::debug!("Building UPDATE SET clause for {} columns", columns.len());
-
-        let mut set_parts = Vec::new();
-        let mut changed_count = 0;
-
-        for col in columns {
-            let col_name = &col.name;
-            let updated_value = updated_row.get(col_name);
-            let original_value = original_row.get(col_name);
-
-            // Check if value changed
-            let changed = match (original_value, updated_value) {
-                (Some(orig), Some(upd)) => {
-                    // Normalize for comparison - treat empty strings as NULL
-                    let orig_norm = if orig.is_empty() || orig == "null" || orig == "NULL" {
-                        None
-                    } else {
-                        Some(orig.as_str())
-                    };
-                    let upd_norm = if upd.is_empty() || upd == "null" || upd == "NULL" {
-                        None
-                    } else {
-                        Some(upd.as_str())
-                    };
-                    orig_norm != upd_norm
-                }
-                (None, Some(_)) => true,
-                (Some(_), None) => true,
-                (None, None) => false,
-            };
-
-            if changed {
-                changed_count += 1;
-                let formatted_value = if let Some(upd_val) = updated_value {
-                    tracing::debug!(
-                        "Column {} changed: '{}' -> '{}'",
-                        col_name,
-                        original_value.unwrap_or(&"NULL".to_string()),
-                        upd_val
-                    );
-                    Self::format_sql_value(upd_val, &col.data_type)
-                } else {
-                    tracing::debug!("Column {} changed to NULL", col_name);
-                    "NULL".to_string()
-                };
-
-                set_parts.push(format!("{} = {}", col_name, formatted_value));
-            }
-        }
-
-        tracing::debug!(
-            "Built SET clause with {} changed columns out of {} total",
-            changed_count,
-            columns.len()
-        );
-
-        set_parts
-    }
-
-    /// Build WHERE clause for UPDATE statement using primary key values
-    fn build_update_where_clause(
-        columns: &[ColumnInfo],
-        primary_key_values: &HashMap<String, String>,
-    ) -> Result<String, ConnectionPoolError> {
-        tracing::debug!("Building UPDATE WHERE clause from primary key values");
-
-        let primary_key_columns: Vec<&ColumnInfo> =
-            columns.iter().filter(|col| col.is_primary_key).collect();
-
-        tracing::debug!("Found {} primary key columns", primary_key_columns.len());
-
-        if primary_key_columns.is_empty() {
-            tracing::error!("Table has no primary key columns");
-            return Err(ConnectionPoolError::SqlxError(sqlx::Error::Configuration(
-                "Table has no primary key columns".into(),
-            )));
-        }
-
-        let mut where_parts = Vec::new();
-
-        for pk_col in &primary_key_columns {
-            let pk_value = primary_key_values.get(&pk_col.name).ok_or_else(|| {
-                tracing::error!("Missing primary key value for column: {}", pk_col.name);
-                ConnectionPoolError::SqlxError(sqlx::Error::Configuration(
-                    format!("Missing primary key value for column: {}", pk_col.name).into(),
-                ))
-            })?;
-
-            tracing::debug!(
-                "Adding primary key condition: {} = {}",
-                pk_col.name,
-                pk_value
-            );
-
-            let formatted_value = Self::format_sql_value(pk_value, &pk_col.data_type);
-            where_parts.push(format!("{} = {}", pk_col.name, formatted_value));
-        }
-
-        let where_clause = where_parts.join(" AND ");
-        tracing::debug!("Built WHERE clause: {}", where_clause);
-
-        Ok(where_clause)
-    }
 }
 
 #[async_trait::async_trait]
@@ -585,7 +331,6 @@ impl ConnectionPool for PostgresConnectionPool {
             filters_btree_map,
         )
         .to_string(PostgresQueryBuilder);
-        tracing::debug!("query {}", query);
         // Execute query and parse results
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -610,10 +355,8 @@ impl ConnectionPool for PostgresConnectionPool {
     }
 
     async fn table_count(&self, table_name: String) -> Result<u64, ConnectionPoolError> {
-        tracing::debug!("Fetching row count for table: {}", table_name);
 
         let query = table_count(table_name.clone()).to_string(PostgresQueryBuilder);
-        tracing::debug!("Table count query: {}", query);
 
         let count = sqlx::query(&query)
             .fetch_one(&self.pool)
@@ -624,21 +367,13 @@ impl ConnectionPool for PostgresConnectionPool {
                 ConnectionPoolError::SqlxError(e)
             })?;
 
-        tracing::debug!("Table {} has {} rows", table_name, count);
-
         Ok(count)
     }
 
     async fn update_table(&self, update_data: UpdateData) -> Result<(), ConnectionPoolError> {
-        tracing::debug!(
-            "Updating table: {} with {} changes",
-            update_data.table_name,
-            update_data.changes.len()
-        );
 
         // Early return if no changes
         if update_data.changes.is_empty() {
-            tracing::debug!("No changes to apply");
             return Ok(());
         }
 
@@ -648,7 +383,6 @@ impl ConnectionPool for PostgresConnectionPool {
             .await?;
 
         if columns.is_empty() {
-            tracing::warn!("No columns found for table: {}", update_data.table_name);
             return Err(ConnectionPoolError::SqlxError(sqlx::Error::Configuration(
                 format!(
                     "Table '{}' not found or has no columns",
@@ -658,40 +392,57 @@ impl ConnectionPool for PostgresConnectionPool {
             )));
         }
 
-        // Escape table name to prevent SQL injection
-        let escaped_table_name = update_data.table_name.replace("'", "''");
 
         // Process each change
         for (idx, change) in update_data.changes.iter().enumerate() {
-            tracing::debug!(
-                "Processing change {} of {} for table {}",
-                idx + 1,
-                update_data.changes.len(),
-                update_data.table_name
-            );
-            // Build WHERE clause from primary key values
-            let where_clause =
-                Self::build_update_where_clause(&columns, &change.primary_key_values)?;
 
-            // Build SET clause from changed columns
-            let set_parts =
-                Self::build_update_set_clause(&columns, &change.updated_row, &change.original_row);
+            let mut update_values: BTreeMap<String, String> = BTreeMap::new();
+
+            for col in &columns {
+                let col_name = &col.name;
+                let updated_value = change.updated_row.get(col_name);
+                let original_value = change.original_row.get(col_name);
+
+                // Check if value changed
+                let changed = match (original_value, updated_value) {
+                    (Some(orig), Some(upd)) => {
+                        // Normalize for comparison - treat empty strings as NULL
+                        let orig_norm = if orig.is_empty() || orig == "null" || orig == "NULL" {
+                            None
+                        } else {
+                            Some(orig.as_str())
+                        };
+                        let upd_norm = if upd.is_empty() || upd == "null" || upd == "NULL" {
+                            None
+                        } else {
+                            Some(upd.as_str())
+                        };
+                        orig_norm != upd_norm
+                    }
+                    (None, Some(_)) => true,
+                    (Some(_), None) => true,
+                    (None, None) => false,
+                };
+
+                if changed {
+                    update_values.insert(col_name.clone(), updated_value.unwrap().clone());
+                }
+            }
 
             // Skip if no columns changed
-            if set_parts.is_empty() {
+            if update_values.is_empty() {
                 tracing::warn!("Change {} has no modified columns, skipping", idx);
                 continue;
             }
 
             // Build UPDATE query
-            let update_query = format!(
-                "UPDATE {} SET {} WHERE {}",
-                escaped_table_name,
-                set_parts.join(", "),
-                where_clause
-            );
+            let update_query = update_table(
+                update_data.table_name.clone(),
+                columns.clone(),
+                change.primary_key_values.clone(),
+                update_values,
+            ).to_string(PostgresQueryBuilder);
 
-            tracing::debug!("Executing UPDATE query (change {}): {}", idx, update_query);
 
             // Execute UPDATE statement
             let result = sqlx::query(&update_query)
@@ -701,19 +452,7 @@ impl ConnectionPool for PostgresConnectionPool {
                     tracing::error!("Failed to execute UPDATE for change {}: {}", idx, e);
                     ConnectionPoolError::SqlxError(e)
                 })?;
-
-            tracing::debug!(
-                "UPDATE query (change {}) affected {} rows",
-                idx,
-                result.rows_affected()
-            );
         }
-
-        tracing::debug!(
-            "Successfully applied {} changes to table {}",
-            update_data.changes.len(),
-            update_data.table_name
-        );
 
         Ok(())
     }

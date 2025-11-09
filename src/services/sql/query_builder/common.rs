@@ -1,6 +1,6 @@
 use crate::services::sql::models::ColumnInfo;
-use sea_query::{Asterisk, Cond, Expr, ExprTrait, Query, SelectStatement};
-use std::collections::{BTreeMap};
+use sea_query::{Asterisk, Cond, Expr, ExprTrait, Query, SelectStatement, UpdateStatement};
+use std::collections::{BTreeMap, HashMap};
 
 pub fn table_count(table_name: String) -> SelectStatement {
     Query::select()
@@ -40,6 +40,30 @@ pub fn table_data(
     }
 
     query.limit(limit).offset(offset);
+
+    query.to_owned()
+}
+
+pub fn update_table(
+    table_name: String,
+    columns: Vec<ColumnInfo>,
+    primary_key_values: HashMap<String, String>,
+    update_values: BTreeMap<String, String>,
+) -> UpdateStatement {
+    let mut query = Query::update();
+    query.table(table_name);
+    let mut conditions = Cond::all();
+    for (primary_column_name, primary_column_value) in primary_key_values {
+        conditions = conditions.add(
+            Expr::col(primary_column_name.clone())
+                .cast_as("TEXT")
+                .eq(primary_column_value.clone()),
+        );
+    }
+    query.values(update_values.iter().map(|(column_name, update_value)| {
+        (column_name.clone(), update_value.clone().to_owned().into())
+    }));
+    query.cond_where(conditions);
 
     query.to_owned()
 }
