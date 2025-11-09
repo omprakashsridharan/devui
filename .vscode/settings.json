@@ -1,3 +1,19 @@
 {
-  "workbench.colorCustomizations": {}
+  "workbench.colorCustomizations": {},
+  "cSpell.words": [
+    "sqlx"
+  ],
+  "sqltools.connections": [
+    {
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5432,
+      "driver": "PostgreSQL",
+      "name": "devui",
+      "username": "devui_user",
+      "database": "devui_sample_db",
+      "password": "devui_password"
+    }
+  ]
 }

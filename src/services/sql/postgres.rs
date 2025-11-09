@@ -1,7 +1,6 @@
 use crate::handlers::sql::DatabaseType;
 use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
-use crate::services::sql::field_decoder::FieldDecoder;
 use crate::services::sql::models::{
     ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow, UpdateData,
 };
@@ -155,66 +154,8 @@ impl PostgresConnectionPool {
         Ok(columns)
     }
 
-    /// Build SELECT clause parts with proper type casting for user-defined types and complex types
-    fn build_select_parts(columns: &[ColumnInfo]) -> Vec<String> {
-        let select_parts: Vec<String> = columns
-            .iter()
-            .map(|col| {
-                let data_type_upper = col.data_type.to_uppercase();
-
-                // Types that need to be cast to text for proper decoding
-                let needs_text_cast = col.data_type == "USER-DEFINED"
-                    || data_type_upper == "BIT"
-                    || data_type_upper == "BIT VARYING"
-                    || data_type_upper == "VARBIT"
-                    || data_type_upper == "INTERVAL"
-                    || data_type_upper == "INET"
-                    || data_type_upper == "CIDR"
-                    || data_type_upper == "MACADDR"
-                    || data_type_upper == "MACADDR8"
-                    || data_type_upper == "POINT"
-                    || data_type_upper == "LINE"
-                    || data_type_upper == "LSEG"
-                    || data_type_upper == "BOX"
-                    || data_type_upper == "PATH"
-                    || data_type_upper == "POLYGON"
-                    || data_type_upper == "CIRCLE"
-                    || data_type_upper == "INT4RANGE"
-                    || data_type_upper == "INT8RANGE"
-                    || data_type_upper == "NUMRANGE"
-                    || data_type_upper == "TSRANGE"
-                    || data_type_upper == "TSTZRANGE"
-                    || data_type_upper == "DATERANGE"
-                    || data_type_upper == "XML"
-                    // JSON types need to be cast to text
-                    || data_type_upper == "JSON"
-                    || data_type_upper == "JSONB"
-                    // MONEY type needs to be cast to text
-                    || data_type_upper == "MONEY"
-                    // TIME WITH TIME ZONE needs to be cast to text
-                    || data_type_upper == "TIME WITH TIME ZONE"
-                    || data_type_upper == "TIMETZ"
-                    // Array types - PostgreSQL returns data_type = 'ARRAY' for array columns
-                    // Also check for array notation in type name
-                    || data_type_upper == "ARRAY"
-                    || data_type_upper.ends_with("[]")
-                    || data_type_upper.contains("ARRAY")
-                    || data_type_upper.starts_with("_");
-
-                if needs_text_cast {
-                    let casted = format!("{}::text as {}", col.name, col.name);
-                    casted
-                } else {
-                    col.name.clone()
-                }
-            })
-            .collect();
-        select_parts
-    }
-
     /// Parse query result rows into TableRow structures
     fn parse_rows(rows: Vec<sqlx::postgres::PgRow>) -> Vec<TableRow> {
-        let mut decode_errors = 0;
         let table_rows: Vec<TableRow> = rows
             .into_iter()
             .enumerate()
@@ -227,10 +168,10 @@ impl PostgresConnectionPool {
                     let column_name = column.name().to_string();
                     columns_info.insert(column_name.clone());
 
-                    let decoded_value = match FieldDecoder::decode_field(&row, &column) {
-                        Ok(value) => value,
+                    let decoded_value= match row.try_get::<Option<String>, _>(column_name.as_str()) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => "".to_string(),
                         Err(e) => {
-                            decode_errors += 1;
                             tracing::warn!(
                                 "Failed to decode column {} in row {}: {}",
                                 column_name,
@@ -251,12 +192,6 @@ impl PostgresConnectionPool {
             })
             .collect();
 
-        if decode_errors > 0 {
-            tracing::warn!(
-                "Encountered {} decode errors while parsing rows",
-                decode_errors
-            );
-        }
         table_rows
     }
 
@@ -638,12 +573,19 @@ impl ConnectionPool for PostgresConnectionPool {
         let offset = page.map(|p| (p - 1) * limit).unwrap_or(0);
         // query.push_str(&format!(" LIMIT {} OFFSET {}", limit, offset));
         let filters_btree_map: Option<BTreeMap<String, String>> = filters.map(|f| {
-            let btree_filters: BTreeMap<String,String> = f.into_iter().collect();
+            let btree_filters: BTreeMap<String, String> = f.into_iter().collect();
             btree_filters
         });
 
-        let query = table_data(&columns, table_name.clone(), limit, offset, filters_btree_map)
-            .to_string(PostgresQueryBuilder);
+        let query = table_data(
+            &columns,
+            table_name.clone(),
+            limit,
+            offset,
+            filters_btree_map,
+        )
+        .to_string(PostgresQueryBuilder);
+        tracing::debug!("query {}", query);
         // Execute query and parse results
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)

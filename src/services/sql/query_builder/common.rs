@@ -1,6 +1,6 @@
 use crate::services::sql::models::ColumnInfo;
 use sea_query::{Asterisk, Cond, Expr, ExprTrait, Query, SelectStatement};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap};
 
 pub fn table_count(table_name: String) -> SelectStatement {
     Query::select()
