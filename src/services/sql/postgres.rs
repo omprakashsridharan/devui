@@ -2,16 +2,15 @@ use crate::handlers::sql::DatabaseType;
 use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
 use crate::services::sql::field_decoder::FieldDecoder;
-use crate::services::sql::filter_handler::FilterHandler;
 use crate::services::sql::models::{
     ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow, UpdateData,
 };
-use crate::services::sql::query_builder::common::table_count;
+use crate::services::sql::query_builder::common::{table_count, table_data};
 use crate::services::sql::query_builder::postgres::{enum_values, table_columns, tables};
 use sea_query::PostgresQueryBuilder;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Column, Pool, Postgres, Row};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub struct PostgresConnectionPool {
     pool: Pool<Postgres>,
@@ -53,16 +52,8 @@ impl PostgresConnectionPool {
         type_name: &str,
         type_schema: Option<&str>,
     ) -> Result<Vec<String>, ConnectionPoolError> {
-        tracing::debug!(
-            "Fetching enum values for type: {} (schema: {:?})",
-            type_name,
-            type_schema
-        );
-
         let query = enum_values(type_name.to_string(), type_schema.map(|s| s.to_string()))
             .to_string(PostgresQueryBuilder);
-
-        tracing::debug!("Enum values query: {}", query);
 
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -76,13 +67,6 @@ impl PostgresConnectionPool {
             .into_iter()
             .map(|row| row.get::<String, _>("enum_value"))
             .collect();
-
-        tracing::debug!(
-            "Fetched {} enum values for type {}: {:?}",
-            enum_values.len(),
-            type_name,
-            enum_values
-        );
 
         Ok(enum_values)
     }
@@ -102,8 +86,6 @@ impl PostgresConnectionPool {
         // Use the modular sea-query builder instead of raw SQL
         let query = table_columns(table_name.to_string(), table_schema.map(|s| s.to_string()))
             .to_string(PostgresQueryBuilder);
-
-        tracing::debug!("Table columns query: {}", query);
 
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -127,23 +109,10 @@ impl PostgresConnectionPool {
             let referenced_table_name: Option<String> = row.get("referenced_table_name");
             let referenced_column_name: Option<String> = row.get("referenced_column_name");
 
-            tracing::debug!(
-                "Processing column: {} (type: {}, udt: {}, nullable: {}, pk: {})",
-                column_name,
-                data_type,
-                udt_name,
-                is_nullable,
-                is_primary_key
-            );
-
             // Fetch enum values if this is a USER-DEFINED type
             let enum_values = if data_type == "USER-DEFINED" {
-                tracing::debug!("Detected USER-DEFINED type, fetching enum values for: {}", udt_name);
                 match self.fetch_enum_values(&udt_name, table_schema).await {
-                    Ok(values) if !values.is_empty() => {
-                        tracing::debug!("Found {} enum values for {}", values.len(), udt_name);
-                        Some(values)
-                    }
+                    Ok(values) if !values.is_empty() => Some(values),
                     Ok(_) => {
                         tracing::debug!("No enum values found for {}", udt_name);
                         None
@@ -163,15 +132,6 @@ impl PostgresConnectionPool {
                 referenced_table_schema,
                 referenced_column_name,
             ) {
-                tracing::debug!(
-                    "Found foreign key: {}.{}.{} -> {}.{}.{}",
-                    table_schema.unwrap_or("public"),
-                    table_name,
-                    column_name,
-                    ref_schema,
-                    ref_table,
-                    ref_col
-                );
                 Some(ForeignKeyInfo {
                     referenced_table: ref_table,
                     referenced_schema: ref_schema,
@@ -192,14 +152,11 @@ impl PostgresConnectionPool {
             });
         }
 
-        tracing::debug!("Returning {} columns for table {}", columns.len(), table_name);
-
         Ok(columns)
     }
 
     /// Build SELECT clause parts with proper type casting for user-defined types and complex types
     fn build_select_parts(columns: &[ColumnInfo]) -> Vec<String> {
-        tracing::debug!("Building SELECT parts for {} columns", columns.len());
         let select_parts: Vec<String> = columns
             .iter()
             .map(|col| {
@@ -246,14 +203,12 @@ impl PostgresConnectionPool {
 
                 if needs_text_cast {
                     let casted = format!("{}::text as {}", col.name, col.name);
-                    tracing::debug!("Casting column {} (type: {}) to text", col.name, col.data_type);
                     casted
                 } else {
                     col.name.clone()
                 }
             })
             .collect();
-        tracing::debug!("Built {} SELECT parts", select_parts.len());
         select_parts
     }
 
@@ -267,7 +222,6 @@ impl PostgresConnectionPool {
 
     /// Parse query result rows into TableRow structures
     fn parse_rows(rows: Vec<sqlx::postgres::PgRow>) -> Vec<TableRow> {
-        tracing::debug!("Parsing {} rows", rows.len());
         let mut decode_errors = 0;
         let table_rows: Vec<TableRow> = rows
             .into_iter()
@@ -277,16 +231,12 @@ impl PostgresConnectionPool {
                 let mut columns_info: HashSet<String> = HashSet::new();
                 let columns = row.columns();
 
-                tracing::debug!("Parsing row {} with {} columns", row_idx, columns.len());
-
                 for column in columns {
                     let column_name = column.name().to_string();
                     columns_info.insert(column_name.clone());
 
                     let decoded_value = match FieldDecoder::decode_field(&row, &column) {
-                        Ok(value) => {
-                            value
-                        }
+                        Ok(value) => value,
                         Err(e) => {
                             decode_errors += 1;
                             tracing::warn!(
@@ -310,10 +260,11 @@ impl PostgresConnectionPool {
             .collect();
 
         if decode_errors > 0 {
-            tracing::warn!("Encountered {} decode errors while parsing rows", decode_errors);
+            tracing::warn!(
+                "Encountered {} decode errors while parsing rows",
+                decode_errors
+            );
         }
-
-        tracing::debug!("Successfully parsed {} rows", table_rows.len());
         table_rows
     }
 
@@ -461,10 +412,7 @@ impl PostgresConnectionPool {
         updated_row: &HashMap<String, String>,
         original_row: &HashMap<String, String>,
     ) -> Vec<String> {
-        tracing::debug!(
-            "Building UPDATE SET clause for {} columns",
-            columns.len()
-        );
+        tracing::debug!("Building UPDATE SET clause for {} columns", columns.len());
 
         let mut set_parts = Vec::new();
         let mut changed_count = 0;
@@ -576,10 +524,7 @@ impl ConnectionPool for PostgresConnectionPool {
     }
 
     async fn tables(&self) -> Result<Vec<TableInfo>, ConnectionPoolError> {
-        tracing::debug!("Fetching all tables");
-
         let query = tables().to_string(PostgresQueryBuilder);
-        tracing::debug!("Tables query: {}", query);
 
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -588,8 +533,6 @@ impl ConnectionPool for PostgresConnectionPool {
                 tracing::error!("Failed to fetch tables: {}", e);
                 ConnectionPoolError::SqlxError(e)
             })?;
-
-        tracing::debug!("Fetched {} rows for tables", rows.len());
 
         let mut tables: HashMap<String, TableInfo> = HashMap::new();
 
@@ -668,7 +611,6 @@ impl ConnectionPool for PostgresConnectionPool {
         }
 
         let table_list: Vec<TableInfo> = tables.into_values().collect();
-        tracing::debug!("Returning {} tables", table_list.len());
 
         Ok(table_list)
     }
@@ -700,47 +642,16 @@ impl ConnectionPool for PostgresConnectionPool {
             });
         }
 
-        // Build SELECT parts with proper type casting
-        let select_parts = Self::build_select_parts(&columns);
-
-        // Convert to tuple format for filter handler
-        let column_tuples = Self::columns_to_tuples(&columns);
-
-        // Build WHERE clauses using the comprehensive filter handler
-        let where_clauses = if let Some(ref filters) = filters {
-            tracing::debug!("Building WHERE clauses from {} filters", filters.len());
-            FilterHandler::build_where_clauses(filters, &column_tuples).map_err(|e| {
-                tracing::error!("Failed to build WHERE clauses: {}", e);
-                ConnectionPoolError::SqlxError(sqlx::Error::Configuration(e.to_string().into()))
-            })?
-        } else {
-            Vec::new()
-        };
-
-        if !where_clauses.is_empty() {
-            tracing::debug!("Built {} WHERE clauses: {:?}", where_clauses.len(), where_clauses);
-        }
-
-        // Build the final query (table_name should be validated/escaped by caller)
-        let escaped_table_name = table_name.replace("'", "''");
-        let mut query = format!(
-            "SELECT {} FROM {}",
-            select_parts.join(", "),
-            escaped_table_name
-        );
-
-        if !where_clauses.is_empty() {
-            query.push_str(&format!(" WHERE {}", where_clauses.join(" AND ")));
-        }
-
-        // Handle pagination
         let limit = page_size.unwrap_or(10);
         let offset = page.map(|p| (p - 1) * limit).unwrap_or(0);
-        query.push_str(&format!(" LIMIT {} OFFSET {}", limit, offset));
+        // query.push_str(&format!(" LIMIT {} OFFSET {}", limit, offset));
+        let filters_btree_map: Option<BTreeMap<String, String>> = filters.map(|f| {
+            let btree_filters: BTreeMap<String,String> = f.into_iter().collect();
+            btree_filters
+        });
 
-        tracing::debug!("Final SQL query: {}", query);
-        tracing::debug!("Pagination: limit={}, offset={}", limit, offset);
-
+        let query = table_data(&columns, table_name.clone(), limit, offset, filters_btree_map)
+            .to_string(PostgresQueryBuilder);
         // Execute query and parse results
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
