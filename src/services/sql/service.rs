@@ -78,12 +78,8 @@ impl Service {
             .get_connection(&connection_name)
             .map_err(SqlServiceError::ConnectionManagerError)?;
 
-        // Construct schema-qualified table name
-        let schema_qualified_name = if schema_name == "public" {
-            table_name
-        } else {
-            format!("{}.{}", schema_name, table_name)
-        };
+        // Always construct schema-qualified table name to avoid ambiguity when same table exists in multiple schemas
+        let schema_qualified_name = format!("{}.{}", schema_name, table_name);
 
         let table_data = pool
             .table_data(schema_qualified_name, filters, page, page_size)

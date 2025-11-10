@@ -318,6 +318,9 @@ impl ConnectionPool for PostgresConnectionPool {
         // Parse schema from table name if present
         let (table_name_only, table_schema) = Self::parse_table_name(&table_name);
 
+        // Default to "public" schema if not specified to avoid ambiguity when same table exists in multiple schemas
+        let table_schema = table_schema.or(Some("public".to_string()));
+
         // Fetch column information using the reusable method
         let columns = self.fetch_table_columns(&table_name_only, table_schema.as_deref()).await?;
 
@@ -374,6 +377,9 @@ impl ConnectionPool for PostgresConnectionPool {
         // Parse schema from table name if present
         let (table_name_only, table_schema) = Self::parse_table_name(&table_name);
 
+        // Default to "public" schema if not specified to avoid ambiguity when same table exists in multiple schemas
+        let table_schema = table_schema.or(Some("public".to_string()));
+
         let query = table_count(table_name_only.clone(), table_schema.clone()).to_string(PostgresQueryBuilder);
 
         let count = sqlx::query(&query)
@@ -397,6 +403,9 @@ impl ConnectionPool for PostgresConnectionPool {
 
         // Parse schema from table name if present
         let (table_name_only, table_schema) = Self::parse_table_name(&update_data.table_name);
+
+        // Default to "public" schema if not specified to avoid ambiguity when same table exists in multiple schemas
+        let table_schema = table_schema.or(Some("public".to_string()));
 
         // Fetch column information for the table
         let columns = self
