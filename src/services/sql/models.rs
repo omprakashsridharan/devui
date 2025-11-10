@@ -8,6 +8,19 @@ pub struct TableInfo {
     pub columns: Vec<ColumnInfo>,
 }
 
+/// Schema with its tables
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct SchemaInfo {
+    pub name: String,
+    pub tables: Vec<TableInfo>,
+}
+
+/// Tables grouped by schema
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct TablesBySchema {
+    pub schemas: Vec<SchemaInfo>,
+}
+
 /// Database column information
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ColumnInfo {

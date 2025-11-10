@@ -965,3 +965,145 @@ SELECT COUNT(*) as order_count FROM orders;
 SELECT COUNT(*) as order_item_count FROM order_items;
 SELECT COUNT(*) as postgres_types_test_count FROM postgres_types_test;
 
+-- ============================================================================
+-- Schema 1: E-commerce Schema
+-- ============================================================================
+CREATE SCHEMA IF NOT EXISTS schema1;
+
+-- Create tables in schema1
+CREATE TABLE IF NOT EXISTS schema1.customers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    phone VARCHAR(50),
+    address TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS schema1.products (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    price DECIMAL(10, 2) NOT NULL,
+    stock INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS schema1.orders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    customer_id UUID NOT NULL,
+    total DECIMAL(10, 2) NOT NULL,
+    status VARCHAR(50) DEFAULT 'pending',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES schema1.customers(id) ON DELETE CASCADE
+);
+
+-- Insert data into schema1
+INSERT INTO schema1.customers (id, name, email, phone, address) VALUES
+('c1eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'John Doe', 'john.doe@example.com', '555-0101', '123 Main St, City, State'),
+('c1eebc99-9c0b-4ef8-bb6d-6bb9bd380a02', 'Jane Smith', 'jane.smith@example.com', '555-0102', '456 Oak Ave, City, State'),
+('c1eebc99-9c0b-4ef8-bb6d-6bb9bd380a03', 'Bob Johnson', 'bob.johnson@example.com', '555-0103', '789 Pine Rd, City, State')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO schema1.products (id, name, description, price, stock) VALUES
+('a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'Laptop', 'High-performance laptop', 1299.99, 25),
+('a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a02', 'Mouse', 'Wireless mouse', 29.99, 100),
+('a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a03', 'Keyboard', 'Mechanical keyboard', 89.99, 50),
+('a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a04', 'Monitor', '27-inch 4K monitor', 399.99, 30),
+('a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a05', 'Headphones', 'Noise-cancelling headphones', 199.99, 40)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO schema1.orders (id, customer_id, total, status) VALUES
+('b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'c1eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 1299.99, 'completed'),
+('b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a02', 'c1eebc99-9c0b-4ef8-bb6d-6bb9bd380a02', 119.98, 'processing'),
+('b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a03', 'c1eebc99-9c0b-4ef8-bb6d-6bb9bd380a03', 399.99, 'pending')
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================================
+-- Schema 2: Inventory Management Schema
+-- ============================================================================
+CREATE SCHEMA IF NOT EXISTS schema2;
+
+-- Create tables in schema2
+CREATE TABLE IF NOT EXISTS schema2.warehouses (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    location VARCHAR(255) NOT NULL,
+    capacity INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS schema2.items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    sku VARCHAR(100) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    unit_price DECIMAL(10, 2) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS schema2.inventory (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    warehouse_id UUID NOT NULL,
+    item_id UUID NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (warehouse_id) REFERENCES schema2.warehouses(id) ON DELETE CASCADE,
+    FOREIGN KEY (item_id) REFERENCES schema2.items(id) ON DELETE CASCADE,
+    UNIQUE(warehouse_id, item_id)
+);
+
+CREATE TABLE IF NOT EXISTS schema2.transactions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    warehouse_id UUID NOT NULL,
+    item_id UUID NOT NULL,
+    transaction_type VARCHAR(50) NOT NULL, -- 'in' or 'out'
+    quantity INTEGER NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (warehouse_id) REFERENCES schema2.warehouses(id) ON DELETE CASCADE,
+    FOREIGN KEY (item_id) REFERENCES schema2.items(id) ON DELETE CASCADE
+);
+
+-- Insert data into schema2
+INSERT INTO schema2.warehouses (id, name, location, capacity) VALUES
+('d2eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'Main Warehouse', 'New York, NY', 10000),
+('d2eebc99-9c0b-4ef8-bb6d-6bb9bd380a02', 'West Coast Distribution', 'Los Angeles, CA', 8000),
+('d2eebc99-9c0b-4ef8-bb6d-6bb9bd380a03', 'East Coast Distribution', 'Boston, MA', 6000)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO schema2.items (id, sku, name, description, unit_price) VALUES
+('e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'SKU-001', 'Widget A', 'Standard widget', 10.50),
+('e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a02', 'SKU-002', 'Widget B', 'Premium widget', 25.75),
+('e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a03', 'SKU-003', 'Gadget X', 'Electronic gadget', 99.99),
+('e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a04', 'SKU-004', 'Gadget Y', 'Advanced gadget', 149.99),
+('e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a05', 'SKU-005', 'Tool Z', 'Professional tool', 79.50)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO schema2.inventory (id, warehouse_id, item_id, quantity) VALUES
+('f2eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 500),
+('f2eebc99-9c0b-4ef8-bb6d-6bb9bd380a02', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a02', 300),
+('f2eebc99-9c0b-4ef8-bb6d-6bb9bd380a03', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a02', 'e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a03', 150),
+('f2eebc99-9c0b-4ef8-bb6d-6bb9bd380a04', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a02', 'e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a04', 100),
+('f2eebc99-9c0b-4ef8-bb6d-6bb9bd380a05', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a03', 'e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a05', 200)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO schema2.transactions (id, warehouse_id, item_id, transaction_type, quantity, notes) VALUES
+('12eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'in', 100, 'Initial stock'),
+('12eebc99-9c0b-4ef8-bb6d-6bb9bd380a02', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a01', 'out', 50, 'Order fulfillment'),
+('12eebc99-9c0b-4ef8-bb6d-6bb9bd380a03', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a02', 'e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a03', 'in', 150, 'New shipment'),
+('12eebc99-9c0b-4ef8-bb6d-6bb9bd380a04', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a03', 'e2eebc99-9c0b-4ef8-bb6d-6bb9bd380a05', 'in', 200, 'Restock')
+ON CONFLICT (id) DO NOTHING;
+
+-- Verify schema data insertion
+SELECT 'Schema1 initialized successfully!' as status;
+SELECT COUNT(*) as schema1_customers FROM schema1.customers;
+SELECT COUNT(*) as schema1_products FROM schema1.products;
+SELECT COUNT(*) as schema1_orders FROM schema1.orders;
+
+SELECT 'Schema2 initialized successfully!' as status;
+SELECT COUNT(*) as schema2_warehouses FROM schema2.warehouses;
+SELECT COUNT(*) as schema2_items FROM schema2.items;
+SELECT COUNT(*) as schema2_inventory FROM schema2.inventory;
+SELECT COUNT(*) as schema2_transactions FROM schema2.transactions;
+

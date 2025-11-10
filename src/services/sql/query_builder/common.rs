@@ -2,16 +2,23 @@ use crate::services::sql::models::ColumnInfo;
 use sea_query::{Asterisk, Cond, Expr, ExprTrait, Query, SelectStatement, UpdateStatement};
 use std::collections::{BTreeMap, HashMap};
 
-pub fn table_count(table_name: String) -> SelectStatement {
-    Query::select()
-        .expr(Expr::col(Asterisk).count())
-        .from(table_name)
-        .to_owned()
+pub fn table_count(table_name: String, table_schema: Option<String>) -> SelectStatement {
+    let mut query = Query::select();
+    query.expr(Expr::col(Asterisk).count());
+
+    if let Some(schema) = table_schema {
+        query.from((schema, table_name));
+    } else {
+        query.from(table_name);
+    }
+
+    query.to_owned()
 }
 
 pub fn table_data(
     columns: &[ColumnInfo],
     table_name: String,
+    table_schema: Option<String>,
     limit: u64,
     offset: u64,
     filters: Option<BTreeMap<String, String>>,
@@ -23,7 +30,11 @@ pub fn table_data(
         Expr::col(column_name).cast_as("TEXT")
     }));
 
-    query.from(table_name);
+    if let Some(schema) = table_schema {
+        query.from((schema, table_name));
+    } else {
+        query.from(table_name);
+    }
 
     if let Some(filters) = filters {
         if !filters.is_empty() {
@@ -46,12 +57,18 @@ pub fn table_data(
 
 pub fn update_table(
     table_name: String,
-    columns: Vec<ColumnInfo>,
+    table_schema: Option<String>,
     primary_key_values: HashMap<String, String>,
     update_values: BTreeMap<String, String>,
 ) -> UpdateStatement {
     let mut query = Query::update();
-    query.table(table_name);
+
+    if let Some(schema) = table_schema {
+        query.table((schema, table_name));
+    } else {
+        query.table(table_name);
+    }
+
     let mut conditions = Cond::all();
     for (primary_column_name, primary_column_value) in primary_key_values {
         conditions = conditions.add(
@@ -79,7 +96,16 @@ mod tests {
     fn test_table_count_postgres() {
         let expected = r#"SELECT COUNT(*) FROM "test""#;
         assert_eq!(
-            table_count("test".to_string()).to_string(PostgresQueryBuilder),
+            table_count("test".to_string(), None).to_string(PostgresQueryBuilder),
+            expected
+        );
+    }
+
+    #[test]
+    fn test_table_count_with_schema_postgres() {
+        let expected = r#"SELECT COUNT(*) FROM "schema1"."test""#;
+        assert_eq!(
+            table_count("test".to_string(), Some("schema1".to_string())).to_string(PostgresQueryBuilder),
             expected
         );
     }
@@ -117,6 +143,7 @@ mod tests {
             table_data(
                 &columns,
                 "test".to_string(),
+                None,
                 10,
                 0,
                 Some(BTreeMap::from([

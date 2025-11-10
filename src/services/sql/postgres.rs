@@ -20,6 +20,18 @@ impl PostgresConnectionPool {
         Self { pool }
     }
 
+    /// Parse a table name that may be schema-qualified (e.g., "schema1.customers" or "customers")
+    /// Returns (table_name, schema)
+    fn parse_table_name(table_name: &str) -> (String, Option<String>) {
+        if let Some(dot_pos) = table_name.rfind('.') {
+            let schema = table_name[..dot_pos].to_string();
+            let name = table_name[dot_pos + 1..].to_string();
+            (name, Some(schema))
+        } else {
+            (table_name.to_string(), None)
+        }
+    }
+
     pub async fn create_pool(
         config: DatabaseConfig,
     ) -> Result<Box<dyn ConnectionPool>, ConnectionPoolError> {
@@ -303,8 +315,11 @@ impl ConnectionPool for PostgresConnectionPool {
             page_size
         );
 
+        // Parse schema from table name if present
+        let (table_name_only, table_schema) = Self::parse_table_name(&table_name);
+
         // Fetch column information using the reusable method
-        let columns = self.fetch_table_columns(&table_name, None).await?;
+        let columns = self.fetch_table_columns(&table_name_only, table_schema.as_deref()).await?;
 
         if columns.is_empty() {
             tracing::warn!("No columns found for table: {}", table_name);
@@ -325,7 +340,8 @@ impl ConnectionPool for PostgresConnectionPool {
 
         let query = table_data(
             &columns,
-            table_name.clone(),
+            table_name_only.clone(),
+            table_schema.clone(),
             limit,
             offset,
             filters_btree_map,
@@ -355,8 +371,10 @@ impl ConnectionPool for PostgresConnectionPool {
     }
 
     async fn table_count(&self, table_name: String) -> Result<u64, ConnectionPoolError> {
+        // Parse schema from table name if present
+        let (table_name_only, table_schema) = Self::parse_table_name(&table_name);
 
-        let query = table_count(table_name.clone()).to_string(PostgresQueryBuilder);
+        let query = table_count(table_name_only.clone(), table_schema.clone()).to_string(PostgresQueryBuilder);
 
         let count = sqlx::query(&query)
             .fetch_one(&self.pool)
@@ -377,9 +395,12 @@ impl ConnectionPool for PostgresConnectionPool {
             return Ok(());
         }
 
+        // Parse schema from table name if present
+        let (table_name_only, table_schema) = Self::parse_table_name(&update_data.table_name);
+
         // Fetch column information for the table
         let columns = self
-            .fetch_table_columns(&update_data.table_name, None)
+            .fetch_table_columns(&table_name_only, table_schema.as_deref())
             .await?;
 
         if columns.is_empty() {
@@ -437,15 +458,15 @@ impl ConnectionPool for PostgresConnectionPool {
 
             // Build UPDATE query
             let update_query = update_table(
-                update_data.table_name.clone(),
-                columns.clone(),
+                table_name_only.clone(),
+                table_schema.clone(),
                 change.primary_key_values.clone(),
                 update_values,
             ).to_string(PostgresQueryBuilder);
 
 
             // Execute UPDATE statement
-            let result = sqlx::query(&update_query)
+            let _: sqlx::postgres::PgQueryResult = sqlx::query(&update_query)
                 .execute(&self.pool)
                 .await
                 .map_err(|e| {

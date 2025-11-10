@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 pub async fn table_data(
     State(SqlServiceState(sql_service)): State<SqlServiceState>,
-    Path((connection_name, table_name)): Path<(String, String)>,
+    Path((connection_name, schema_name, table_name)): Path<(String, String, String)>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<TableData>, StatusCode> {
     // Separate pagination parameters from filters
@@ -26,7 +26,7 @@ pub async fn table_data(
     };
 
     match sql_service
-        .table_data(connection_name, table_name, filters, page, page_size)
+        .table_data(connection_name, schema_name, table_name, filters, page, page_size)
         .await
     {
         Ok(table_data) => Ok(Json(table_data)),
