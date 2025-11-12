@@ -52,7 +52,7 @@ impl Service {
         for table in table_info {
             schema_map
                 .entry(table.schema.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(table);
         }
 

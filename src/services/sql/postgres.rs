@@ -204,7 +204,7 @@ impl PostgresConnectionPool {
 #[async_trait::async_trait]
 impl ConnectionPool for PostgresConnectionPool {
     fn database_type(&self) -> DatabaseType {
-        DatabaseType::POSTGRES
+        DatabaseType::Postgres
     }
 
     async fn tables(&self) -> Result<Vec<TableInfo>, ConnectionPoolError> {
