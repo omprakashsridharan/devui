@@ -24,7 +24,6 @@ pub enum DevUIError {
 }
 
 pub async fn dev_ui_router(dev_ui_config: DevUIConfig) -> Result<Router, DevUIError> {
-
     let mut api_router = Router::new()
         .route("/services", get(dev_ui_services))
         .with_state(dev_ui_config.clone());
@@ -37,8 +36,8 @@ pub async fn dev_ui_router(dev_ui_config: DevUIConfig) -> Result<Router, DevUIEr
     }
 
     if let Some(kafka_config) = dev_ui_config.kafka_config {
-        let kafka_service = KafkaService::new(kafka_config.clone())
-            .map_err(DevUIError::KafkaServiceError)?;
+        let kafka_service =
+            KafkaService::new(kafka_config.clone()).map_err(DevUIError::KafkaServiceError)?;
         api_router = api_router.nest("/services/kafka", kafka_router(kafka_service));
     }
 
@@ -88,12 +87,10 @@ async fn serve_embedded_assets(uri: Uri) -> Response<Body> {
                                 .unwrap()
                         })
                 }
-                None => {
-                    Response::builder()
-                        .status(StatusCode::NOT_FOUND)
-                        .body(Body::from("Not Found"))
-                        .unwrap()
-                }
+                None => Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Body::from("Not Found"))
+                    .unwrap(),
             }
         }
     }

@@ -105,7 +105,8 @@ mod tests {
     fn test_table_count_with_schema_postgres() {
         let expected = r#"SELECT COUNT(*) FROM "schema1"."test""#;
         assert_eq!(
-            table_count("test".to_string(), Some("schema1".to_string())).to_string(PostgresQueryBuilder),
+            table_count("test".to_string(), Some("schema1".to_string()))
+                .to_string(PostgresQueryBuilder),
             expected
         );
     }

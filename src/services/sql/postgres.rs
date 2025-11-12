@@ -88,7 +88,6 @@ impl PostgresConnectionPool {
         table_name: &str,
         table_schema: Option<&str>,
     ) -> Result<Vec<ColumnInfo>, ConnectionPoolError> {
-
         // Use the modular sea-query builder instead of raw SQL
         let query = table_columns(table_name.to_string(), table_schema.map(|s| s.to_string()))
             .to_string(PostgresQueryBuilder);
@@ -173,7 +172,8 @@ impl PostgresConnectionPool {
                     let column_name = column.name().to_string();
                     columns_info.insert(column_name.clone());
 
-                    let decoded_value= match row.try_get::<Option<String>, _>(column_name.as_str()) {
+                    let decoded_value = match row.try_get::<Option<String>, _>(column_name.as_str())
+                    {
                         Ok(Some(value)) => value,
                         Ok(None) => "".to_string(),
                         Err(e) => {
@@ -199,7 +199,6 @@ impl PostgresConnectionPool {
 
         table_rows
     }
-
 }
 
 #[async_trait::async_trait]
@@ -322,7 +321,9 @@ impl ConnectionPool for PostgresConnectionPool {
         let table_schema = table_schema.or(Some("public".to_string()));
 
         // Fetch column information using the reusable method
-        let columns = self.fetch_table_columns(&table_name_only, table_schema.as_deref()).await?;
+        let columns = self
+            .fetch_table_columns(&table_name_only, table_schema.as_deref())
+            .await?;
 
         if columns.is_empty() {
             tracing::warn!("No columns found for table: {}", table_name);
@@ -380,7 +381,8 @@ impl ConnectionPool for PostgresConnectionPool {
         // Default to "public" schema if not specified to avoid ambiguity when same table exists in multiple schemas
         let table_schema = table_schema.or(Some("public".to_string()));
 
-        let query = table_count(table_name_only.clone(), table_schema.clone()).to_string(PostgresQueryBuilder);
+        let query = table_count(table_name_only.clone(), table_schema.clone())
+            .to_string(PostgresQueryBuilder);
 
         let count = sqlx::query(&query)
             .fetch_one(&self.pool)
@@ -395,7 +397,6 @@ impl ConnectionPool for PostgresConnectionPool {
     }
 
     async fn update_table(&self, update_data: UpdateData) -> Result<(), ConnectionPoolError> {
-
         // Early return if no changes
         if update_data.changes.is_empty() {
             return Ok(());
@@ -422,10 +423,8 @@ impl ConnectionPool for PostgresConnectionPool {
             )));
         }
 
-
         // Process each change
         for (idx, change) in update_data.changes.iter().enumerate() {
-
             let mut update_values: BTreeMap<String, String> = BTreeMap::new();
 
             for col in &columns {
@@ -471,8 +470,8 @@ impl ConnectionPool for PostgresConnectionPool {
                 table_schema.clone(),
                 change.primary_key_values.clone(),
                 update_values,
-            ).to_string(PostgresQueryBuilder);
-
+            )
+            .to_string(PostgresQueryBuilder);
 
             // Execute UPDATE statement
             let _: sqlx::postgres::PgQueryResult = sqlx::query(&update_query)

@@ -30,4 +30,3 @@ pub async fn update_table(
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
-

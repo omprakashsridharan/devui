@@ -26,7 +26,14 @@ pub async fn table_data(
     };
 
     match sql_service
-        .table_data(connection_name, schema_name, table_name, filters, page, page_size)
+        .table_data(
+            connection_name,
+            schema_name,
+            table_name,
+            filters,
+            page,
+            page_size,
+        )
         .await
     {
         Ok(table_data) => Ok(Json(table_data)),

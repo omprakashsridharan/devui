@@ -59,12 +59,12 @@ pub struct TableData {
 #[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct UpdateData {
     pub table_name: String,
-    pub changes: Vec<Change>
+    pub changes: Vec<Change>,
 }
 
 #[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct Change {
     pub primary_key_values: HashMap<String, String>,
     pub updated_row: HashMap<String, String>,
-    pub original_row: HashMap<String, String>
+    pub original_row: HashMap<String, String>,
 }
