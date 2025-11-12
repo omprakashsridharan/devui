@@ -3,7 +3,7 @@ pub(crate) use crate::services::sql::connection_manager::{
     ConnectionManager, ConnectionManagerError,
 };
 use crate::services::sql::connection_pool::ConnectionPoolError;
-use crate::services::sql::models::{TableData, TableInfo, UpdateData};
+use crate::services::sql::models::{TableData, TableInfo, TablesBySchema, UpdateData};
 use crate::SqlConfig;
 use std::sync::Arc;
 use thiserror::Error;
@@ -35,7 +35,7 @@ impl Service {
         self.connection_manager.get_connections()
     }
 
-    pub async fn tables(self, connection_name: String) -> Result<Vec<TableInfo>, SqlServiceError> {
+    pub async fn tables(self, connection_name: String) -> Result<TablesBySchema, SqlServiceError> {
         let pool = self
             .connection_manager
             .get_connection(&connection_name)
@@ -44,12 +44,30 @@ impl Service {
             .tables()
             .await
             .map_err(SqlServiceError::ConnectionPoolError)?;
-        Ok(table_info)
+
+        // Group tables by schema
+        use std::collections::BTreeMap;
+        let mut schema_map: BTreeMap<String, Vec<TableInfo>> = BTreeMap::new();
+
+        for table in table_info {
+            schema_map
+                .entry(table.schema.clone())
+                .or_default()
+                .push(table);
+        }
+
+        let schemas: Vec<_> = schema_map
+            .into_iter()
+            .map(|(name, tables)| crate::services::sql::models::SchemaInfo { name, tables })
+            .collect();
+
+        Ok(TablesBySchema { schemas })
     }
 
     pub async fn table_data(
         self,
         connection_name: String,
+        schema_name: String,
         table_name: String,
         filters: Option<std::collections::HashMap<String, String>>,
         page: Option<u64>,
@@ -59,8 +77,12 @@ impl Service {
             .connection_manager
             .get_connection(&connection_name)
             .map_err(SqlServiceError::ConnectionManagerError)?;
+
+        // Always construct schema-qualified table name to avoid ambiguity when same table exists in multiple schemas
+        let schema_qualified_name = format!("{}.{}", schema_name, table_name);
+
         let table_data = pool
-            .table_data(table_name, filters, page, page_size)
+            .table_data(schema_qualified_name, filters, page, page_size)
             .await
             .map_err(SqlServiceError::ConnectionPoolError)?;
         Ok(table_data)

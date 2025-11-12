@@ -111,27 +111,12 @@ export class SqlService {
   }
 
   /**
-   * Get database tables for a connection
+   * Get database tables for a connection (grouped by schema)
    */
-  async getTables(connectionId: string): Promise<Array<{
-    name: string;
-    schema: string;
-    columns: Array<{
+  async getTables(connectionId: string): Promise<{
+    schemas: Array<{
       name: string;
-      data_type: string;
-      is_nullable: boolean;
-      is_primary_key: boolean;
-      default_value: string | null;
-      enum_values?: string[] | null;
-      foreign_key?: {
-        referenced_table: string;
-        referenced_schema: string;
-        referenced_column: string;
-      } | null;
-    }>;
-  }>> {
-    try {
-      const response = await api.get<Array<{
+      tables: Array<{
         name: string;
         schema: string;
         columns: Array<{
@@ -147,7 +132,11 @@ export class SqlService {
             referenced_column: string;
           } | null;
         }>;
-      }>>(`/services/sql/connections/${connectionId}/tables`);
+      }>;
+    }>;
+  }> {
+    try {
+      const response = await api.get<TablesBySchemaResponse>(`/services/sql/connections/${connectionId}/tables`);
       return response;
     } catch (error) {
       if (error instanceof ApiError) {
@@ -163,6 +152,7 @@ export class SqlService {
    */
   async getTableData(
     connectionId: string,
+    schemaName: string,
     tableName: string,
     filters?: Record<string, string>,
     page?: number,
@@ -186,7 +176,7 @@ export class SqlService {
     }>;
   }> {
     try {
-      let url = `/services/sql/connections/${connectionId}/tables/${tableName}`;
+      let url = `/services/sql/connections/${connectionId}/schemas/${schemaName}/tables/${tableName}`;
 
       // Build query parameters
       const searchParams = new URLSearchParams();
@@ -271,13 +261,19 @@ export class SqlService {
     views: Array<{ name: string; schema?: string }>;
   }> {
     try {
-      const tables = await this.getTables(connectionId);
+      const tablesBySchema = await this.getTables(connectionId);
+      const tables: Array<{ name: string; type: string; schema?: string }> = [];
+      tablesBySchema.schemas.forEach(schema => {
+        schema.tables.forEach(table => {
+          tables.push({
+            name: table.name,
+            type: 'table',
+            schema: table.schema,
+          });
+        });
+      });
       return {
-        tables: tables.map(table => ({
-          name: table.name,
-          type: 'table',
-          schema: table.schema,
-        })),
+        tables,
         views: [], // Views not provided in current API
       };
     } catch (error) {
@@ -294,6 +290,7 @@ export class SqlService {
    */
   async updateTable(
     connectionId: string,
+    schemaName: string,
     tableName: string,
     changes: Array<{
       original_row: Record<string, unknown>;
@@ -324,8 +321,13 @@ export class SqlService {
         ),
       }));
 
-      await api.put(`/services/sql/connections/${connectionId}/tables/${tableName}`, {
-        table_name: tableName,
+      // Construct schema-qualified table name for the request body
+      const schemaQualifiedTableName = schemaName === 'public'
+        ? tableName
+        : `${schemaName}.${tableName}`;
+
+      await api.put(`/services/sql/connections/${connectionId}/schemas/${schemaName}/tables/${tableName}`, {
+        table_name: schemaQualifiedTableName,
         changes: formattedChanges,
       });
     } catch (error) {
@@ -337,6 +339,30 @@ export class SqlService {
     }
   }
 }
+
+// Type for tables grouped by schema
+type TablesBySchemaResponse = {
+  schemas: Array<{
+    name: string;
+    tables: Array<{
+      name: string;
+      schema: string;
+      columns: Array<{
+        name: string;
+        data_type: string;
+        is_nullable: boolean;
+        is_primary_key: boolean;
+        default_value: string | null;
+        enum_values?: string[] | null;
+        foreign_key?: {
+          referenced_table: string;
+          referenced_schema: string;
+          referenced_column: string;
+        } | null;
+      }>;
+    }>;
+  }>;
+};
 
 // Export a default instance
 export const sqlService = new SqlService();

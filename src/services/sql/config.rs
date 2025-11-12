@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     pub database_configs: HashMap<String, DatabaseConfig>,
 }
@@ -19,14 +19,6 @@ pub struct PostgresConfig {
     pub username: String,
     pub password: String,
     pub ssl_mode: Option<String>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            database_configs: HashMap::new(),
-        }
-    }
 }
 
 impl Config {

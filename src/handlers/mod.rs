@@ -1,7 +1,7 @@
 pub mod kafka;
 pub mod sql;
 
-use axum::{Json, extract::State};
+use axum::{extract::State, Json};
 use serde::Serialize;
 
 use crate::DevUIConfig;

@@ -9,6 +9,12 @@ pub struct ClusterConfig {
     pub bootstrap_servers: String,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Config {
     pub fn new() -> Self {
         Self {

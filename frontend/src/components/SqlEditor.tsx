@@ -65,13 +65,19 @@ interface Table {
   }>;
 }
 
+interface Schema {
+  name: string;
+  tables: Table[];
+}
+
 
 const SqlEditor = () => {
   const [connections, setConnections] = useState<SqlConnection[]>([]);
   const [selectedConnection, setSelectedConnection] = useState<SqlConnection | null>(null);
-  const [tables, setTables] = useState<Table[]>([]);
+  const [schemas, setSchemas] = useState<Schema[]>([]);
   const [loading, setLoading] = useState(true);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
+  const [expandedSchemas, setExpandedSchemas] = useState<Set<string>>(new Set());
   const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set());
   const [tableData, setTableData] = useState<{
     columns: string[];
@@ -94,6 +100,7 @@ const SqlEditor = () => {
   const [loadingTableData, setLoadingTableData] = useState(false);
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [currentTableName, setCurrentTableName] = useState<string | null>(null);
+  const [currentSchemaName, setCurrentSchemaName] = useState<string | null>(null);
   const [tableDataError, setTableDataError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -135,7 +142,7 @@ const SqlEditor = () => {
       setLoading(true);
       const connectionId = getConnectionId(selectedConnection);
       const tablesData = await sqlService.getTables(connectionId);
-      setTables(tablesData);
+      setSchemas(tablesData.schemas);
     } catch (error) {
       console.error('Failed to load tables:', error);
     } finally {
@@ -175,6 +182,19 @@ const SqlEditor = () => {
     return connection.id || connection.name;
   };
 
+  // Toggle schema expansion
+  const toggleSchemaExpansion = (schemaName: string) => {
+    setExpandedSchemas(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(schemaName)) {
+        newSet.delete(schemaName);
+      } else {
+        newSet.add(schemaName);
+      }
+      return newSet;
+    });
+  };
+
   // Toggle table expansion
   const toggleTableExpansion = (tableName: string) => {
     setExpandedTables(prev => {
@@ -190,6 +210,7 @@ const SqlEditor = () => {
 
   // Load table data
   const loadTableData = async (
+    schemaName: string,
     tableName: string,
     appliedFilters?: Record<string, string>,
     pageNum?: number,
@@ -202,11 +223,15 @@ const SqlEditor = () => {
       setTableDataError(null); // Clear any previous errors
       setTableData(null); // Clear previous data immediately
       setCurrentTableName(tableName);
+      setCurrentSchemaName(schemaName);
 
       // Clear foreign key filter if switching to a different table
       // or if filters are explicitly cleared (empty object passed)
       const filtersToUse = appliedFilters ?? filters;
-      if (tableName !== foreignKeyFilter?.referencedTable) {
+      const schemaQualifiedTableName = schemaName === 'public'
+        ? tableName
+        : `${schemaName}.${tableName}`;
+      if (schemaQualifiedTableName !== foreignKeyFilter?.referencedTable) {
         setForeignKeyFilter(null);
       } else if (appliedFilters !== undefined && Object.keys(appliedFilters).length === 0) {
         // Only clear if explicitly cleared (not just using empty filters state)
@@ -218,6 +243,7 @@ const SqlEditor = () => {
       const currentPageSize = pageSizeNum ?? pageSize;
       const data = await sqlService.getTableData(
         connectionId,
+        schemaName,
         tableName,
         filtersToUse,
         currentPage,
@@ -254,9 +280,9 @@ const SqlEditor = () => {
 
   // Apply filters
   const applyFilters = () => {
-    if (currentTableName) {
+    if (currentTableName && currentSchemaName) {
       setPage(1); // Reset to first page when applying filters
-      loadTableData(currentTableName, filters, 1, pageSize);
+      loadTableData(currentSchemaName, currentTableName, filters, 1, pageSize);
     }
   };
 
@@ -266,16 +292,16 @@ const SqlEditor = () => {
     setForeignKeyFilter(null); // Clear foreign key filter indication
     setTableDataError(null); // Clear any errors when clearing filters
     setPage(1); // Reset to first page when clearing filters
-    if (currentTableName) {
-      loadTableData(currentTableName, {}, 1, pageSize);
+    if (currentTableName && currentSchemaName) {
+      loadTableData(currentSchemaName, currentTableName, {}, 1, pageSize);
     }
   };
 
   // Handle page change
   const handlePageChange = (_event: React.ChangeEvent<unknown> | React.MouseEvent<HTMLButtonElement> | null, value: number) => {
     setPage(value);
-    if (currentTableName) {
-      loadTableData(currentTableName, filters, value, pageSize);
+    if (currentTableName && currentSchemaName) {
+      loadTableData(currentSchemaName, currentTableName, filters, value, pageSize);
     }
   };
 
@@ -286,8 +312,8 @@ const SqlEditor = () => {
     if (typeof newPageSize === 'number') {
       setPageSize(newPageSize);
       setPage(1); // Reset to first page when changing page size
-      if (currentTableName) {
-        loadTableData(currentTableName, filters, 1, newPageSize);
+      if (currentTableName && currentSchemaName) {
+        loadTableData(currentSchemaName, currentTableName, filters, 1, newPageSize);
       }
     }
   };
@@ -300,29 +326,34 @@ const SqlEditor = () => {
 
     // Load the referenced table
     const referencedTable = foreignKey.referenced_table;
+    const referencedSchema = foreignKey.referenced_schema;
     setPage(1);
     // Set filter to show the row with the matching foreign key value
     const filtersForReferencedTable: Record<string, string> = {
       [foreignKey.referenced_column]: value,
     };
+    // Pass schema-qualified table name (e.g., "schema1.customers")
+    const schemaQualifiedReferencedTable = referencedSchema === 'public'
+      ? referencedTable
+      : `${referencedSchema}.${referencedTable}`;
     // Update filters state so filter inputs show the foreign key filter value
     setFilters(filtersForReferencedTable);
     // Track foreign key filter for indication
     setForeignKeyFilter({
       column: foreignKey.referenced_column,
       value: value,
-      referencedTable: referencedTable,
-      referencedSchema: foreignKey.referenced_schema,
+      referencedTable: schemaQualifiedReferencedTable,
+      referencedSchema: referencedSchema,
     });
-    loadTableData(referencedTable, filtersForReferencedTable, 1, pageSize);
+    loadTableData(referencedSchema, referencedTable, filtersForReferencedTable, 1, pageSize);
   };
 
   // Clear foreign key filter
   const clearForeignKeyFilter = () => {
     setForeignKeyFilter(null);
     setFilters({});
-    if (currentTableName) {
-      loadTableData(currentTableName, {}, 1, pageSize);
+    if (currentTableName && currentSchemaName) {
+      loadTableData(currentSchemaName, currentTableName, {}, 1, pageSize);
     }
   };
 
@@ -407,11 +438,15 @@ const SqlEditor = () => {
 
   // Prepare request body for committing changes
   const prepareCommitRequestBody = () => {
-    if (!selectedConnection || !currentTableName || !tableData) {
+    if (!selectedConnection || !currentTableName || !currentSchemaName || !tableData) {
       return null;
     }
 
     const connectionId = getConnectionId(selectedConnection);
+    // Construct schema-qualified table name
+    const schemaQualifiedTableName = currentSchemaName === 'public'
+      ? currentTableName
+      : `${currentSchemaName}.${currentTableName}`;
     const changes: Array<{
       original_row: Record<string, unknown>;
       updated_row: Record<string, unknown>;
@@ -464,7 +499,7 @@ const SqlEditor = () => {
 
     return {
       connectionId,
-      table_name: currentTableName,
+      table_name: schemaQualifiedTableName,
       changes,
     };
   };
@@ -472,7 +507,7 @@ const SqlEditor = () => {
   // Handle commit changes button click
   const handleCommitChanges = async () => {
     const requestBody = prepareCommitRequestBody();
-    if (!requestBody || !selectedConnection || !currentTableName) {
+    if (!requestBody || !selectedConnection || !currentTableName || !currentSchemaName) {
       return;
     }
 
@@ -480,7 +515,8 @@ const SqlEditor = () => {
       const connectionId = getConnectionId(selectedConnection);
       await sqlService.updateTable(
         connectionId,
-        requestBody.table_name,
+        currentSchemaName,
+        currentTableName,
         requestBody.changes
       );
 
@@ -490,7 +526,7 @@ const SqlEditor = () => {
       setHasChanges(false);
 
       // Reload table data to show updated values
-      await loadTableData(currentTableName);
+      await loadTableData(currentSchemaName, currentTableName);
 
       // Show success message (you might want to add a toast notification here)
       console.log('Changes committed successfully');
@@ -1156,7 +1192,7 @@ const SqlEditor = () => {
           <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Typography variant="h6">
-            Database Tables ({tables.length})
+            Database Tables ({schemas.reduce((total, schema) => total + schema.tables.length, 0)})
               </Typography>
               <Tooltip title="Refresh">
                 <IconButton size="small" onClick={loadTables}>
@@ -1179,7 +1215,7 @@ const SqlEditor = () => {
                   Loading tables...
                 </Typography>
               </Box>
-            ) : tables.length === 0 ? (
+            ) : schemas.length === 0 ? (
               <Box sx={{ p: 2 }}>
                 <Typography variant="body2" color="text.secondary">
                   No tables found or database not connected
@@ -1187,85 +1223,122 @@ const SqlEditor = () => {
               </Box>
             ) : (
               <List dense>
-                {tables.map((table, index) => {
-                  const isExpanded = expandedTables.has(table.name);
+                {schemas.map((schema, schemaIndex) => {
+                  const isSchemaExpanded = expandedSchemas.has(schema.name);
                   return (
-                    <ListItem key={index} sx={{ flexDirection: 'column', alignItems: 'stretch', p: 0 }}>
+                    <ListItem key={schemaIndex} sx={{ flexDirection: 'column', alignItems: 'stretch', p: 0 }}>
                       <ListItemButton
-                        onClick={() => toggleTableExpansion(table.name)}
+                        onClick={() => toggleSchemaExpansion(schema.name)}
                         sx={{
                           display: 'flex',
                           alignItems: 'center',
                           width: '100%',
                           py: 1,
-                          px: 2
+                          px: 2,
+                          backgroundColor: isSchemaExpanded ? 'action.selected' : 'transparent'
                         }}
                       >
                         <ListItemIcon sx={{ minWidth: 40 }}>
-                          <TableIcon />
+                          {isSchemaExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                         </ListItemIcon>
                         <ListItemText
-                          primary={table.name}
-                          secondary={`Schema: ${table.schema} • ${table.columns.length} columns`}
+                          primary={
+                            <Typography variant="subtitle2" fontWeight="medium">
+                              {schema.name}
+                            </Typography>
+                          }
+                          secondary={`${schema.tables.length} table${schema.tables.length !== 1 ? 's' : ''}`}
                         />
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Tooltip title="Show Table Data">
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setPage(1); // Reset to first page when loading new table
-                                loadTableData(table.name, {}, 1, pageSize);
-                              }}
-                              sx={{
-                                color: 'primary.main',
-                                '&:hover': {
-                                  backgroundColor: 'primary.light',
-                                  color: 'primary.contrastText'
-                                }
-                              }}
-                            >
-                              <ShowDataIcon />
-                            </IconButton>
-                          </Tooltip>
-                          <IconButton size="small">
-                            {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                          </IconButton>
-                        </Box>
                       </ListItemButton>
 
-                      {isExpanded && (
-                        <Box sx={{ ml: 4, maxHeight: 200, overflow: 'auto', borderLeft: 1, borderColor: 'divider', pl: 2 }}>
+                      {isSchemaExpanded && (
+                        <Box sx={{ ml: 2, borderLeft: 1, borderColor: 'divider' }}>
                           <List dense>
-                            {table.columns.map((column, colIndex) => (
-                              <ListItem key={colIndex} sx={{ py: 0.5 }}>
-                                <ListItemText
-                                  primary={
+                            {schema.tables.map((table, tableIndex) => {
+                              const isTableExpanded = expandedTables.has(`${schema.name}.${table.name}`);
+                              return (
+                                <ListItem key={tableIndex} sx={{ flexDirection: 'column', alignItems: 'stretch', p: 0 }}>
+                                  <ListItemButton
+                                    onClick={() => toggleTableExpansion(`${schema.name}.${table.name}`)}
+                                    sx={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      width: '100%',
+                                      py: 0.75,
+                                      px: 2
+                                    }}
+                                  >
+                                    <ListItemIcon sx={{ minWidth: 40 }}>
+                                      <TableIcon />
+                                    </ListItemIcon>
+                                    <ListItemText
+                                      primary={table.name}
+                                      secondary={`${table.columns.length} columns`}
+                                    />
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                      <Typography variant="body2" fontWeight="medium">
-                                        {column.name}
-                                      </Typography>
-                                      {column.is_primary_key && (
-                                        <Chip label="PK" size="small" color="primary" />
-                                      )}
-                                      {column.foreign_key && (
-                                        <Chip label="FK" size="small" color="info" />
-                                      )}
-                                      {!column.is_nullable && (
-                                        <Chip label="NOT NULL" size="small" color="warning" />
-                                      )}
+                                      <Tooltip title="Show Table Data">
+                                        <IconButton
+                                          size="small"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setPage(1);
+                                            loadTableData(schema.name, table.name, {}, 1, pageSize);
+                                          }}
+                                          sx={{
+                                            color: 'primary.main',
+                                            '&:hover': {
+                                              backgroundColor: 'primary.light',
+                                              color: 'primary.contrastText'
+                                            }
+                                          }}
+                                        >
+                                          <ShowDataIcon />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <IconButton size="small">
+                                        {isTableExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                                      </IconButton>
                                     </Box>
-                                  }
-                                  secondary={
-                                    <Typography variant="caption" color="text.secondary">
-                                      {column.data_type}
-                                      {column.foreign_key && ` • FK → ${column.foreign_key.referenced_schema}.${column.foreign_key.referenced_table}`}
-                                      {column.default_value && ` • Default: ${column.default_value}`}
-                                    </Typography>
-                                  }
-                                />
-                              </ListItem>
-                            ))}
+                                  </ListItemButton>
+
+                                  {isTableExpanded && (
+                                    <Box sx={{ ml: 4, maxHeight: 200, overflow: 'auto', borderLeft: 1, borderColor: 'divider', pl: 2 }}>
+                                      <List dense>
+                                        {table.columns.map((column, colIndex) => (
+                                          <ListItem key={colIndex} sx={{ py: 0.5 }}>
+                                            <ListItemText
+                                              primary={
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                  <Typography variant="body2" fontWeight="medium">
+                                                    {column.name}
+                                                  </Typography>
+                                                  {column.is_primary_key && (
+                                                    <Chip label="PK" size="small" color="primary" />
+                                                  )}
+                                                  {column.foreign_key && (
+                                                    <Chip label="FK" size="small" color="info" />
+                                                  )}
+                                                  {!column.is_nullable && (
+                                                    <Chip label="NOT NULL" size="small" color="warning" />
+                                                  )}
+                                                </Box>
+                                              }
+                                              secondary={
+                                                <Typography variant="caption" color="text.secondary">
+                                                  {column.data_type}
+                                                  {column.foreign_key && ` • FK → ${column.foreign_key.referenced_schema}.${column.foreign_key.referenced_table}`}
+                                                  {column.default_value && ` • Default: ${column.default_value}`}
+                                                </Typography>
+                                              }
+                                            />
+                                          </ListItem>
+                                        ))}
+                                      </List>
+                                    </Box>
+                                  )}
+                                </ListItem>
+                              );
+                            })}
                           </List>
                         </Box>
                       )}
@@ -1285,7 +1358,13 @@ const SqlEditor = () => {
               <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box>
-                    <Typography variant="h6">Table Data</Typography>
+                    <Typography variant="h6">
+                      {currentSchemaName && currentTableName
+                        ? (currentSchemaName === 'public'
+                            ? currentTableName
+                            : `${currentSchemaName}.${currentTableName}`)
+                        : 'Table Data'}
+                    </Typography>
                     {tableData && !tableDataError && (
                       <Typography variant="body2" color="text.secondary">
                         Showing {((page - 1) * pageSize) + 1} - {Math.min(page * pageSize, tableData.total_rows)} of {tableData.total_rows.toLocaleString()} rows • {tableData.columns.length} columns • Page {page} of {Math.ceil(tableData.total_rows / pageSize) || 1}
@@ -1304,7 +1383,7 @@ const SqlEditor = () => {
                         color="success"
                         startIcon={<SaveIcon />}
                         onClick={handleCommitChanges}
-                        disabled={loadingTableData || !selectedConnection || !currentTableName}
+                        disabled={loadingTableData || !selectedConnection || !currentTableName || !currentSchemaName}
                         size="small"
                       >
                         Commit Changes
@@ -1314,7 +1393,7 @@ const SqlEditor = () => {
                       variant="contained"
                       startIcon={<SearchIcon />}
                       onClick={applyFilters}
-                      disabled={loadingTableData || !currentTableName}
+                      disabled={loadingTableData || !currentTableName || !currentSchemaName}
                       size="small"
                     >
                       Apply Filters
@@ -1332,7 +1411,8 @@ const SqlEditor = () => {
                 </Box>
               </Box>
               {/* Foreign Key Filter Indicator */}
-              {foreignKeyFilter && currentTableName === foreignKeyFilter.referencedTable && (
+              {foreignKeyFilter && currentSchemaName && currentTableName &&
+                (currentSchemaName === 'public' ? currentTableName : `${currentSchemaName}.${currentTableName}`) === foreignKeyFilter.referencedTable && (
                 <Alert
                   severity="info"
                   icon={<LinkIcon />}
@@ -1581,8 +1661,11 @@ const SqlEditor = () => {
                         <TableBody>
                           {tableData.data.map((row, index) => {
                             // Check if this row matches the foreign key filter
+                            const currentSchemaQualifiedName = currentSchemaName && currentTableName
+                              ? (currentSchemaName === 'public' ? currentTableName : `${currentSchemaName}.${currentTableName}`)
+                              : null;
                             const matchesForeignKeyFilter = foreignKeyFilter &&
-                              currentTableName === foreignKeyFilter.referencedTable &&
+                              currentSchemaQualifiedName === foreignKeyFilter.referencedTable &&
                               row[foreignKeyFilter.column]?.toString() === foreignKeyFilter.value;
 
                             return (

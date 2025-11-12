@@ -1,12 +1,15 @@
 use crate::handlers::sql::DatabaseType;
 use crate::services::sql::config::DatabaseConfig;
 use crate::services::sql::connection_pool::{ConnectionPool, ConnectionPoolError};
-use crate::services::sql::field_decoder::FieldDecoder;
-use crate::services::sql::filter_handler::FilterHandler;
-use crate::services::sql::models::{ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow, UpdateData};
+use crate::services::sql::models::{
+    ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow, UpdateData,
+};
+use crate::services::sql::query_builder::common::{table_count, table_data, update_table};
+use crate::services::sql::query_builder::postgres::{enum_values, table_columns, tables};
+use sea_query::PostgresQueryBuilder;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Column, Pool, Postgres, Row};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub struct PostgresConnectionPool {
     pool: Pool<Postgres>,
@@ -15,6 +18,18 @@ pub struct PostgresConnectionPool {
 impl PostgresConnectionPool {
     pub fn new(pool: Pool<Postgres>) -> Self {
         Self { pool }
+    }
+
+    /// Parse a table name that may be schema-qualified (e.g., "schema1.customers" or "customers")
+    /// Returns (table_name, schema)
+    fn parse_table_name(table_name: &str) -> (String, Option<String>) {
+        if let Some(dot_pos) = table_name.rfind('.') {
+            let schema = table_name[..dot_pos].to_string();
+            let name = table_name[dot_pos + 1..].to_string();
+            (name, Some(schema))
+        } else {
+            (table_name.to_string(), None)
+        }
     }
 
     pub async fn create_pool(
@@ -48,25 +63,8 @@ impl PostgresConnectionPool {
         type_name: &str,
         type_schema: Option<&str>,
     ) -> Result<Vec<String>, ConnectionPoolError> {
-        let schema_filter = if let Some(schema) = type_schema {
-            format!("AND n.nspname = '{}'", schema.replace("'", "''"))
-        } else {
-            String::new()
-        };
-
-        let query = format!(
-            r#"
-            SELECT e.enumlabel AS enum_value
-            FROM pg_type t
-            JOIN pg_enum e ON t.oid = e.enumtypid
-            JOIN pg_namespace n ON n.oid = t.typnamespace
-            WHERE t.typname = '{}'
-            {}
-            ORDER BY e.enumsortorder
-            "#,
-            type_name.replace("'", "''"),
-            schema_filter
-        );
+        let query = enum_values(type_name.to_string(), type_schema.map(|s| s.to_string()))
+            .to_string(PostgresQueryBuilder);
 
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -76,10 +74,12 @@ impl PostgresConnectionPool {
                 ConnectionPoolError::SqlxError(e)
             })?;
 
-        Ok(rows
+        let enum_values: Vec<String> = rows
             .into_iter()
             .map(|row| row.get::<String, _>("enum_value"))
-            .collect())
+            .collect();
+
+        Ok(enum_values)
     }
 
     /// Fetch column information for a specific table
@@ -88,59 +88,9 @@ impl PostgresConnectionPool {
         table_name: &str,
         table_schema: Option<&str>,
     ) -> Result<Vec<ColumnInfo>, ConnectionPoolError> {
-        let schema_filter = if let Some(schema) = table_schema {
-            format!("AND c.table_schema = '{}'", schema.replace("'", "''"))
-        } else {
-            String::new()
-        };
-
-        let query = format!(
-            r#"
-            SELECT
-                c.column_name,
-                c.data_type,
-                c.udt_name,
-                c.is_nullable,
-                c.column_default,
-                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
-                fk.referenced_table_schema,
-                fk.referenced_table_name,
-                fk.referenced_column_name
-            FROM information_schema.columns c
-            LEFT JOIN (
-                SELECT ku.table_name, ku.column_name, ku.table_schema
-                FROM information_schema.table_constraints tc
-                JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name
-                WHERE tc.constraint_type = 'PRIMARY KEY'
-            ) pk ON c.table_name = pk.table_name
-                AND c.column_name = pk.column_name
-                AND c.table_schema = pk.table_schema
-            LEFT JOIN (
-                SELECT
-                    kcu.column_name,
-                    kcu.table_name,
-                    kcu.table_schema,
-                    ccu.table_schema AS referenced_table_schema,
-                    ccu.table_name AS referenced_table_name,
-                    ccu.column_name AS referenced_column_name
-                FROM information_schema.table_constraints AS tc
-                JOIN information_schema.key_column_usage AS kcu
-                    ON tc.constraint_name = kcu.constraint_name
-                    AND tc.table_schema = kcu.table_schema
-                JOIN information_schema.constraint_column_usage AS ccu
-                    ON ccu.constraint_name = tc.constraint_name
-                    AND ccu.table_schema = tc.table_schema
-                WHERE tc.constraint_type = 'FOREIGN KEY'
-            ) fk ON c.table_name = fk.table_name
-                AND c.column_name = fk.column_name
-                AND c.table_schema = fk.table_schema
-            WHERE c.table_name = '{}'
-            {}
-            ORDER BY c.ordinal_position
-            "#,
-            table_name.replace("'", "''"),
-            schema_filter
-        );
+        // Use the modular sea-query builder instead of raw SQL
+        let query = table_columns(table_name.to_string(), table_schema.map(|s| s.to_string()))
+            .to_string(PostgresQueryBuilder);
 
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -164,12 +114,16 @@ impl PostgresConnectionPool {
 
             // Fetch enum values if this is a USER-DEFINED type
             let enum_values = if data_type == "USER-DEFINED" {
-                match self
-                    .fetch_enum_values(&udt_name, table_schema)
-                    .await
-                {
+                match self.fetch_enum_values(&udt_name, table_schema).await {
                     Ok(values) if !values.is_empty() => Some(values),
-                    _ => None,
+                    Ok(_) => {
+                        tracing::debug!("No enum values found for {}", udt_name);
+                        None
+                    }
+                    Err(e) => {
+                        tracing::warn!("Error fetching enum values for {}: {:?}", udt_name, e);
+                        None
+                    }
                 }
             } else {
                 None
@@ -204,48 +158,36 @@ impl PostgresConnectionPool {
         Ok(columns)
     }
 
-    /// Build SELECT clause parts with proper type casting for user-defined types
-    fn build_select_parts(columns: &[ColumnInfo]) -> Vec<String> {
-        columns
-            .iter()
-            .map(|col| {
-                if col.data_type == "USER-DEFINED" {
-                    format!("{}::text as {}", col.name, col.name)
-                } else {
-                    col.name.clone()
-                }
-            })
-            .collect()
-    }
-
-    /// Convert ColumnInfo to tuple format for filter handler
-    fn columns_to_tuples(columns: &[ColumnInfo]) -> Vec<(String, String)> {
-        columns
-            .iter()
-            .map(|col| (col.name.clone(), col.data_type.clone()))
-            .collect()
-    }
-
     /// Parse query result rows into TableRow structures
     fn parse_rows(rows: Vec<sqlx::postgres::PgRow>) -> Vec<TableRow> {
-        rows.into_iter()
-            .map(|row| {
+        let table_rows: Vec<TableRow> = rows
+            .into_iter()
+            .enumerate()
+            .map(|(row_idx, row)| {
                 let mut table_row_data: HashMap<String, String> = HashMap::new();
                 let mut columns_info: HashSet<String> = HashSet::new();
                 let columns = row.columns();
 
                 for column in columns {
-                    columns_info.insert(column.name().to_string());
+                    let column_name = column.name().to_string();
+                    columns_info.insert(column_name.clone());
 
-                    let decoded_value = match FieldDecoder::decode_field(&row, &column) {
-                        Ok(value) => value,
+                    let decoded_value = match row.try_get::<Option<String>, _>(column_name.as_str())
+                    {
+                        Ok(Some(value)) => value,
+                        Ok(None) => "".to_string(),
                         Err(e) => {
-                            tracing::warn!("Failed to decode column {}: {}", column.name(), e);
+                            tracing::warn!(
+                                "Failed to decode column {} in row {}: {}",
+                                column_name,
+                                row_idx,
+                                e
+                            );
                             "[DECODE ERROR]".to_string()
                         }
                     };
 
-                    table_row_data.insert(column.name().to_string(), decoded_value);
+                    table_row_data.insert(column_name, decoded_value);
                 }
 
                 TableRow {
@@ -253,233 +195,22 @@ impl PostgresConnectionPool {
                     data: table_row_data,
                 }
             })
-            .collect()
-    }
-
-    /// Escape SQL value to prevent injection
-    fn escape_sql_value(value: &str) -> String {
-        value.replace("'", "''")
-    }
-
-    /// Check if a string represents a numeric value
-    fn is_numeric(value: &str) -> bool {
-        value.parse::<f64>().is_ok()
-    }
-
-    /// Parse boolean value
-    fn parse_boolean(value: &str) -> Result<bool, String> {
-        match value.to_lowercase().as_str() {
-            "true" | "t" | "1" | "yes" | "y" | "on" => Ok(true),
-            "false" | "f" | "0" | "no" | "n" | "off" => Ok(false),
-            _ => Err(format!("Invalid boolean value: '{}'", value)),
-        }
-    }
-
-    /// Format SQL value based on data type for UPDATE statements
-    fn format_sql_value(value: &str, data_type: &str) -> String {
-        // Handle NULL values
-        if value.is_empty() || value == "null" || value == "NULL" {
-            return "NULL".to_string();
-        }
-
-        match data_type.to_lowercase().as_str() {
-            // Numeric types - no quotes
-            "integer" | "bigint" | "smallint" | "numeric" | "decimal" | "real"
-            | "double precision" | "int2" | "int4" | "int8" | "float4" | "float8" => {
-                if Self::is_numeric(value) {
-                    value.to_string()
-                } else {
-                    // If not numeric, treat as text
-                    let escaped = Self::escape_sql_value(value);
-                    format!("'{}'", escaped)
-                }
-            }
-
-            // Boolean types - no quotes
-            "boolean" | "bool" => {
-                match Self::parse_boolean(value) {
-                    Ok(true) => "true".to_string(),
-                    Ok(false) => "false".to_string(),
-                    Err(_) => {
-                        // Invalid boolean, treat as text
-                        let escaped = Self::escape_sql_value(value);
-                        format!("'{}'", escaped)
-                    }
-                }
-            }
-
-            // UUID - quoted
-            "uuid" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // Text types - quoted and escaped
-            "text" | "varchar" | "char" | "character" | "character varying" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // Date/time types - quoted
-            "timestamp" | "timestamptz" | "date" | "time" | "timetz" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // JSON types - quoted
-            "json" | "jsonb" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // User-defined types - quoted (will be cast to text if needed)
-            "user-defined" => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-
-            // Default - quoted as text
-            _ => {
-                let escaped = Self::escape_sql_value(value);
-                format!("'{}'", escaped)
-            }
-        }
-    }
-
-    /// Build SET clause for UPDATE statement from changed columns
-    fn build_update_set_clause(
-        columns: &[ColumnInfo],
-        updated_row: &HashMap<String, String>,
-        original_row: &HashMap<String, String>,
-    ) -> Vec<String> {
-        let mut set_parts = Vec::new();
-
-        for col in columns {
-            let col_name = &col.name;
-            let updated_value = updated_row.get(col_name);
-            let original_value = original_row.get(col_name);
-
-            // Check if value changed
-            let changed = match (original_value, updated_value) {
-                (Some(orig), Some(upd)) => {
-                    // Normalize for comparison - treat empty strings as NULL
-                    let orig_norm = if orig.is_empty() || orig == "null" || orig == "NULL" {
-                        None
-                    } else {
-                        Some(orig.as_str())
-                    };
-                    let upd_norm = if upd.is_empty() || upd == "null" || upd == "NULL" {
-                        None
-                    } else {
-                        Some(upd.as_str())
-                    };
-                    orig_norm != upd_norm
-                }
-                (None, Some(_)) => true,
-                (Some(_), None) => true,
-                (None, None) => false,
-            };
-
-            if changed {
-                let formatted_value = if let Some(upd_val) = updated_value {
-                    Self::format_sql_value(upd_val, &col.data_type)
-                } else {
-                    "NULL".to_string()
-                };
-
-                set_parts.push(format!("{} = {}", col_name, formatted_value));
-            }
-        }
-
-        set_parts
-    }
-
-    /// Build WHERE clause for UPDATE statement using primary key values
-    fn build_update_where_clause(
-        columns: &[ColumnInfo],
-        primary_key_values: &HashMap<String, String>,
-    ) -> Result<String, ConnectionPoolError> {
-        let primary_key_columns: Vec<&ColumnInfo> = columns
-            .iter()
-            .filter(|col| col.is_primary_key)
             .collect();
 
-        if primary_key_columns.is_empty() {
-            return Err(ConnectionPoolError::SqlxError(sqlx::Error::Configuration(
-                "Table has no primary key columns".into(),
-            )));
-        }
-
-        let mut where_parts = Vec::new();
-
-        for pk_col in &primary_key_columns {
-            let pk_value = primary_key_values.get(&pk_col.name).ok_or_else(|| {
-                ConnectionPoolError::SqlxError(sqlx::Error::Configuration(format!(
-                    "Missing primary key value for column: {}",
-                    pk_col.name
-                ).into()))
-            })?;
-
-            let formatted_value = Self::format_sql_value(pk_value, &pk_col.data_type);
-            where_parts.push(format!("{} = {}", pk_col.name, formatted_value));
-        }
-
-        Ok(where_parts.join(" AND "))
+        table_rows
     }
 }
 
 #[async_trait::async_trait]
 impl ConnectionPool for PostgresConnectionPool {
     fn database_type(&self) -> DatabaseType {
-        DatabaseType::POSTGRES
+        DatabaseType::Postgres
     }
 
     async fn tables(&self) -> Result<Vec<TableInfo>, ConnectionPoolError> {
-        let query = r#"
-                SELECT
-                    t.table_name,
-                    t.table_schema,
-                    c.column_name,
-                    c.data_type,
-                    c.udt_name,
-                    c.is_nullable,
-                    c.column_default,
-                    CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
-                    fk.referenced_table_schema,
-                    fk.referenced_table_name,
-                    fk.referenced_column_name
-                FROM information_schema.tables t
-                LEFT JOIN information_schema.columns c ON t.table_name = c.table_name AND t.table_schema = c.table_schema
-                LEFT JOIN (
-                    SELECT ku.table_name, ku.column_name, ku.table_schema
-                    FROM information_schema.table_constraints tc
-                    JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name
-                    WHERE tc.constraint_type = 'PRIMARY KEY'
-                ) pk ON c.table_name = pk.table_name AND c.column_name = pk.column_name AND c.table_schema = pk.table_schema
-                LEFT JOIN (
-                    SELECT
-                        kcu.column_name,
-                        kcu.table_name,
-                        kcu.table_schema,
-                        ccu.table_schema AS referenced_table_schema,
-                        ccu.table_name AS referenced_table_name,
-                        ccu.column_name AS referenced_column_name
-                    FROM information_schema.table_constraints AS tc
-                    JOIN information_schema.key_column_usage AS kcu
-                        ON tc.constraint_name = kcu.constraint_name
-                        AND tc.table_schema = kcu.table_schema
-                    JOIN information_schema.constraint_column_usage AS ccu
-                        ON ccu.constraint_name = tc.constraint_name
-                        AND ccu.table_schema = tc.table_schema
-                    WHERE tc.constraint_type = 'FOREIGN KEY'
-                ) fk ON c.table_name = fk.table_name
-                    AND c.column_name = fk.column_name
-                    AND c.table_schema = fk.table_schema
-                WHERE t.table_schema NOT IN ('information_schema', 'pg_catalog')
-                ORDER BY t.table_schema, t.table_name, c.ordinal_position
-            "#;
+        let query = tables().to_string(PostgresQueryBuilder);
 
-        let rows = sqlx::query(query)
+        let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| {
@@ -563,7 +294,9 @@ impl ConnectionPool for PostgresConnectionPool {
             }
         }
 
-        Ok(tables.into_values().collect())
+        let table_list: Vec<TableInfo> = tables.into_values().collect();
+
+        Ok(table_list)
     }
 
     async fn table_data(
@@ -573,8 +306,24 @@ impl ConnectionPool for PostgresConnectionPool {
         page: Option<u64>,
         page_size: Option<u64>,
     ) -> Result<TableData, ConnectionPoolError> {
+        tracing::debug!(
+            "Fetching table data for: {} (filters: {:?}, page: {:?}, page_size: {:?})",
+            table_name,
+            filters,
+            page,
+            page_size
+        );
+
+        // Parse schema from table name if present
+        let (table_name_only, table_schema) = Self::parse_table_name(&table_name);
+
+        // Default to "public" schema if not specified to avoid ambiguity when same table exists in multiple schemas
+        let table_schema = table_schema.or(Some("public".to_string()));
+
         // Fetch column information using the reusable method
-        let columns = self.fetch_table_columns(&table_name, None).await?;
+        let columns = self
+            .fetch_table_columns(&table_name_only, table_schema.as_deref())
+            .await?;
 
         if columns.is_empty() {
             tracing::warn!("No columns found for table: {}", table_name);
@@ -585,37 +334,23 @@ impl ConnectionPool for PostgresConnectionPool {
             });
         }
 
-        // Build SELECT parts with proper type casting
-        let select_parts = Self::build_select_parts(&columns);
-
-        // Convert to tuple format for filter handler
-        let column_tuples = Self::columns_to_tuples(&columns);
-
-        // Build WHERE clauses using the comprehensive filter handler
-        let where_clauses = if let Some(ref filters) = filters {
-            FilterHandler::build_where_clauses(filters, &column_tuples).map_err(|e| {
-                tracing::error!("Failed to build WHERE clauses: {}", e);
-                ConnectionPoolError::SqlxError(sqlx::Error::Configuration(e.to_string().into()))
-            })?
-        } else {
-            Vec::new()
-        };
-
-        // Build the final query (table_name should be validated/escaped by caller)
-        let escaped_table_name = table_name.replace("'", "''");
-        let mut query = format!("SELECT {} FROM {}", select_parts.join(", "), escaped_table_name);
-
-        if !where_clauses.is_empty() {
-            query.push_str(&format!(" WHERE {}", where_clauses.join(" AND ")));
-        }
-
-        // Handle pagination
         let limit = page_size.unwrap_or(10);
         let offset = page.map(|p| (p - 1) * limit).unwrap_or(0);
-        query.push_str(&format!(" LIMIT {} OFFSET {}", limit, offset));
+        // query.push_str(&format!(" LIMIT {} OFFSET {}", limit, offset));
+        let filters_btree_map: Option<BTreeMap<String, String>> = filters.map(|f| {
+            let btree_filters: BTreeMap<String, String> = f.into_iter().collect();
+            btree_filters
+        });
 
-        tracing::debug!("SQL query: {}", query);
-
+        let query = table_data(
+            &columns,
+            table_name_only.clone(),
+            table_schema.clone(),
+            limit,
+            offset,
+            filters_btree_map,
+        )
+        .to_string(PostgresQueryBuilder);
         // Execute query and parse results
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -625,91 +360,125 @@ impl ConnectionPool for PostgresConnectionPool {
                 ConnectionPoolError::SqlxError(e)
             })?;
 
+        tracing::debug!("Fetched {} rows from database", rows.len());
+
         let table_data = Self::parse_rows(rows);
+
+        let total_rows = self.table_count(table_name.clone()).await?;
+        tracing::debug!("Total rows in table {}: {}", table_name, total_rows);
 
         Ok(TableData {
             rows: table_data,
-            total_rows: self.table_count(table_name).await?,
+            total_rows,
             columns,
         })
     }
 
     async fn table_count(&self, table_name: String) -> Result<u64, ConnectionPoolError> {
-        // Escape table name to prevent SQL injection
-        let escaped_table_name = table_name.replace("'", "''");
-        let query = format!("SELECT COUNT(*) FROM {}", escaped_table_name);
+        // Parse schema from table name if present
+        let (table_name_only, table_schema) = Self::parse_table_name(&table_name);
 
-        sqlx::query(&query)
+        // Default to "public" schema if not specified to avoid ambiguity when same table exists in multiple schemas
+        let table_schema = table_schema.or(Some("public".to_string()));
+
+        let query = table_count(table_name_only.clone(), table_schema.clone())
+            .to_string(PostgresQueryBuilder);
+
+        let count = sqlx::query(&query)
             .fetch_one(&self.pool)
             .await
             .map(|row| row.get::<i64, _>(0) as u64)
             .map_err(|e| {
                 tracing::error!("Failed to fetch table count for {}: {}", table_name, e);
                 ConnectionPoolError::SqlxError(e)
-            })
+            })?;
+
+        Ok(count)
     }
 
     async fn update_table(&self, update_data: UpdateData) -> Result<(), ConnectionPoolError> {
         // Early return if no changes
         if update_data.changes.is_empty() {
-            tracing::debug!("No changes to apply");
             return Ok(());
         }
 
+        // Parse schema from table name if present
+        let (table_name_only, table_schema) = Self::parse_table_name(&update_data.table_name);
+
+        // Default to "public" schema if not specified to avoid ambiguity when same table exists in multiple schemas
+        let table_schema = table_schema.or(Some("public".to_string()));
+
         // Fetch column information for the table
-        let columns = self.fetch_table_columns(&update_data.table_name, None).await?;
+        let columns = self
+            .fetch_table_columns(&table_name_only, table_schema.as_deref())
+            .await?;
 
         if columns.is_empty() {
-            tracing::warn!("No columns found for table: {}", update_data.table_name);
             return Err(ConnectionPoolError::SqlxError(sqlx::Error::Configuration(
-                format!("Table '{}' not found or has no columns", update_data.table_name).into(),
+                format!(
+                    "Table '{}' not found or has no columns",
+                    update_data.table_name
+                )
+                .into(),
             )));
         }
 
-        // Escape table name to prevent SQL injection
-        let escaped_table_name = update_data.table_name.replace("'", "''");
-
         // Process each change
         for (idx, change) in update_data.changes.iter().enumerate() {
-            // Build WHERE clause from primary key values
-            let where_clause = Self::build_update_where_clause(&columns, &change.primary_key_values)?;
+            let mut update_values: BTreeMap<String, String> = BTreeMap::new();
 
-            // Build SET clause from changed columns
-            let set_parts = Self::build_update_set_clause(
-                &columns,
-                &change.updated_row,
-                &change.original_row,
-            );
+            for col in &columns {
+                let col_name = &col.name;
+                let updated_value = change.updated_row.get(col_name);
+                let original_value = change.original_row.get(col_name);
+
+                // Check if value changed
+                let changed = match (original_value, updated_value) {
+                    (Some(orig), Some(upd)) => {
+                        // Normalize for comparison - treat empty strings as NULL
+                        let orig_norm = if orig.is_empty() || orig == "null" || orig == "NULL" {
+                            None
+                        } else {
+                            Some(orig.as_str())
+                        };
+                        let upd_norm = if upd.is_empty() || upd == "null" || upd == "NULL" {
+                            None
+                        } else {
+                            Some(upd.as_str())
+                        };
+                        orig_norm != upd_norm
+                    }
+                    (None, Some(_)) => true,
+                    (Some(_), None) => true,
+                    (None, None) => false,
+                };
+
+                if changed {
+                    update_values.insert(col_name.clone(), updated_value.unwrap().clone());
+                }
+            }
 
             // Skip if no columns changed
-            if set_parts.is_empty() {
-                tracing::warn!(
-                    "Change {} has no modified columns, skipping",
-                    idx
-                );
+            if update_values.is_empty() {
+                tracing::warn!("Change {} has no modified columns, skipping", idx);
                 continue;
             }
 
             // Build UPDATE query
-            let update_query = format!(
-                "UPDATE {} SET {} WHERE {}",
-                escaped_table_name,
-                set_parts.join(", "),
-                where_clause
-            );
-
-            tracing::debug!("Executing UPDATE query (change {}): {}", idx, update_query);
+            let update_query = update_table(
+                table_name_only.clone(),
+                table_schema.clone(),
+                change.primary_key_values.clone(),
+                update_values,
+            )
+            .to_string(PostgresQueryBuilder);
 
             // Execute UPDATE statement
-            sqlx::query(&update_query)
+            let _: sqlx::postgres::PgQueryResult = sqlx::query(&update_query)
                 .execute(&self.pool)
                 .await
                 .map_err(|e| {
-                    tracing::error!(
-                        "Failed to execute UPDATE for change {}: {}",
-                        idx,
-                        e
-                    );
+                    tracing::error!("Failed to execute UPDATE for change {}: {}", idx, e);
                     ConnectionPoolError::SqlxError(e)
                 })?;
         }

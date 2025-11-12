@@ -6,11 +6,18 @@ use http::StatusCode;
 
 pub async fn update_table(
     State(SqlServiceState(sql_service)): State<SqlServiceState>,
-    Path((connection_name, table_name)): Path<(String, String)>,
+    Path((connection_name, schema_name, table_name)): Path<(String, String, String)>,
     Json(update_data): Json<UpdateData>,
 ) -> Result<Json<()>, StatusCode> {
+    // Construct expected schema-qualified table name
+    let expected_table_name = if schema_name == "public" {
+        table_name.clone()
+    } else {
+        format!("{}.{}", schema_name, table_name)
+    };
+
     // Validate that the table_name in the path matches the table_name in the body
-    if update_data.table_name != table_name {
+    if update_data.table_name != expected_table_name {
         return Err(StatusCode::BAD_REQUEST);
     }
 
@@ -23,4 +30,3 @@ pub async fn update_table(
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
-

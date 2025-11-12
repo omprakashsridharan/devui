@@ -10,7 +10,7 @@ use serde::Serialize;
 
 #[derive(Serialize, Clone)]
 pub enum DatabaseType {
-    POSTGRES,
+    Postgres,
 }
 
 #[derive(Clone, Serialize)]
@@ -26,7 +26,7 @@ pub async fn connections(
     for (connection_name, connection_pool) in sql_service.get_connections() {
         connections.push(ConnectionResponseItem {
             name: connection_name,
-            database_type: connection_pool.into(),
+            database_type: connection_pool,
         })
     }
     Ok(Json(connections))

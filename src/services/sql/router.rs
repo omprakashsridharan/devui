@@ -14,11 +14,11 @@ pub fn router(sql_service: Service) -> Router {
         .route("/connections", get(connections))
         .route("/connections/{connection_name}/tables", get(tables))
         .route(
-            "/connections/{connection_name}/tables/{table_name}",
+            "/connections/{connection_name}/schemas/{schema_name}/tables/{table_name}",
             get(table_data),
         )
         .route(
-            "/connections/{connection_name}/tables/{table_name}",
+            "/connections/{connection_name}/schemas/{schema_name}/tables/{table_name}",
             put(update_table),
         )
         .with_state(SqlServiceState(sql_service))

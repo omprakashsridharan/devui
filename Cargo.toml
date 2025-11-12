@@ -39,6 +39,7 @@ futures-util = "0.3.31"
 async-stream = "0.3.6"
 rust-embed = { version = "8.0", features = ["axum"] }
 bytes = "1.0"
+sea-query = { version = "1.0.0-rc.1", features = ["derive"]}
 
 [dev-dependencies]
 cargo-watch = "8.5"
