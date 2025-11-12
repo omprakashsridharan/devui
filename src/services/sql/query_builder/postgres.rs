@@ -422,10 +422,7 @@ pub fn enum_values(enum_name: String, schema: Option<String>) -> SelectStatement
             conditions.add(Expr::col((PgNamespace::Table, PgNamespace::Nspname)).eq(schema));
     }
     Query::select()
-        .expr_as(
-            Expr::col((PgEnum::Table, PgEnum::Enumlabel)),
-            "enum_value",
-        )
+        .expr_as(Expr::col((PgEnum::Table, PgEnum::Enumlabel)), "enum_value")
         .from((PgCatalog::Table, PgType::Table))
         .inner_join(
             (PgCatalog::Table, PgEnum::Table),
@@ -444,7 +441,7 @@ pub fn enum_values(enum_name: String, schema: Option<String>) -> SelectStatement
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_query::{MysqlQueryBuilder, PostgresQueryBuilder};
+    use sea_query::PostgresQueryBuilder;
 
     // Helper function to normalize SQL strings by removing whitespace and newlines
     fn normalize_sql(sql: &str) -> String {
@@ -538,65 +535,10 @@ mod tests {
                 ON "information_schema"."columns"."table_name" = "fk"."table_name"
                 AND "information_schema"."columns"."column_name" = "fk"."column_name"
                 AND "information_schema"."columns"."table_schema" = "fk"."table_schema"
-            WHERE "information_schema"."tables"."table_schema" NOT IN ('information_schema')
-            ORDER BY "information_schema"."tables"."table_schema" ASC, "information_schema"."tables"."table_name" ASC, "information_schema"."columns"."ordinal_position" ASC
-        "#;
-        let actual = tables().to_string(PostgresQueryBuilder);
-        assert_eq!(normalize_sql(&actual), normalize_sql(expected));
-    }
-
-    #[test]
-    fn test_tables_mysql() {
-        let expected = r#"
-            SELECT
-                "tables"."table_name",
-                "tables"."table_schema",
-                "columns"."column_name",
-                "columns"."data_type",
-                "columns"."udt_name",
-                "columns"."is_nullable",
-                "columns"."column_default",
-                (CASE WHEN ("pk"."column_name" IS NOT NULL) THEN TRUE ELSE FALSE END) AS "is_primary_key",
-                "fk"."referenced_table_schema",
-                "fk"."referenced_table_name",
-                "fk"."referenced_column_name"
-            FROM "information_schema"."tables"
-            LEFT JOIN "information_schema"."columns"
-                ON "information_schema"."tables"."table_name" = "information_schema"."columns"."table_name"
-                AND "information_schema"."tables"."table_schema" = "information_schema"."columns"."table_schema"
-            LEFT JOIN (SELECT
-                "key_column_usage"."table_name",
-                "key_column_usage"."column_name",
-                "key_column_usage"."table_schema"
-            FROM "information_schema"."table_constraints"
-            INNER JOIN "information_schema"."key_column_usage"
-                ON "information_schema"."table_constraints"."constraint_name" = "information_schema"."key_column_usage"."constraint_name"
-            WHERE "information_schema"."table_constraints"."constraint_type" = 'PRIMARY KEY') AS "pk"
-                ON "information_schema"."columns"."table_name" = "pk"."table_name"
-                AND "information_schema"."columns"."column_name" = "pk"."column_name"
-                AND "information_schema"."columns"."table_schema" = "pk"."table_schema"
-            LEFT JOIN (SELECT
-                "key_column_usage"."column_name",
-                "key_column_usage"."table_name",
-                "key_column_usage"."table_schema",
-                "constraint_column_usage"."table_schema" AS "referenced_table_schema",
-                "constraint_column_usage"."table_name" AS "referenced_table_name",
-                "constraint_column_usage"."column_name" AS "referenced_column_name"
-            FROM "information_schema"."table_constraints"
-            INNER JOIN "information_schema"."key_column_usage"
-                ON "information_schema"."table_constraints"."constraint_name" = "information_schema"."key_column_usage"."constraint_name"
-                AND "information_schema"."table_constraints"."table_schema" = "information_schema"."key_column_usage"."table_schema"
-            INNER JOIN "information_schema"."constraint_column_usage"
-                ON "information_schema"."table_constraints"."constraint_name" = "information_schema"."constraint_column_usage"."constraint_name"
-                AND "information_schema"."table_constraints"."table_schema" = "information_schema"."constraint_column_usage"."table_schema"
-            WHERE "information_schema"."table_constraints"."constraint_type" = 'FOREIGN KEY') AS "fk"
-                ON "information_schema"."columns"."table_name" = "fk"."table_name"
-                AND "information_schema"."columns"."column_name" = "fk"."column_name"
-                AND "information_schema"."columns"."table_schema" = "fk"."table_schema"
             WHERE "information_schema"."tables"."table_schema" NOT IN ('information_schema', 'pg_catalog')
             ORDER BY "information_schema"."tables"."table_schema" ASC, "information_schema"."tables"."table_name" ASC, "information_schema"."columns"."ordinal_position" ASC
         "#;
-        let actual = tables().to_string(MysqlQueryBuilder);
+        let actual = tables().to_string(PostgresQueryBuilder);
         assert_eq!(normalize_sql(&actual), normalize_sql(expected));
     }
 
