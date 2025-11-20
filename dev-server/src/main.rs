@@ -1,9 +1,7 @@
 use axum::{response::Html, routing::get, Router};
-use devui::{
-    dev_ui_router, DevUIConfigBuilder, PostgresConfig, SqlConfig,
-};
+use devui::{dev_ui_router, DevUIConfigBuilder, MysqlConfig, PostgresConfig, SqlConfig};
 use tower_http::{
-    cors::{AllowOrigin, AllowMethods, AllowHeaders, CorsLayer},
+    cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer},
     trace::TraceLayer,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -17,10 +15,7 @@ async fn main() {
     //   RUST_LOG=info - Show info and above
     //   RUST_LOG=devui::services::sql=debug - Show debug only for SQL services
     tracing_subscriber::registry()
-        .with(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("debug")),
-        )
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug")))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
@@ -36,6 +31,16 @@ async fn main() {
                 username: "devui_user".to_string(),
                 password: "devui_password".to_string(),
                 ssl_mode: Some("disable".to_string()),
+            },
+        )
+        .with_mysql(
+            "mysql-sample-db".to_string(),
+            MysqlConfig {
+                host: "localhost".to_string(),
+                port: 3307,
+                database: "devui_sample_db".to_string(),
+                username: "devui_user".to_string(),
+                password: "devui_password".to_string(),
             },
         );
 
@@ -88,4 +93,3 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
-

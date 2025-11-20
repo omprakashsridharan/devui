@@ -26,7 +26,7 @@ http = "1.0"
 tower-http = { version = "0.6.6", features = ["trace", "fs", "cors"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "bigdecimal"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "mysql", "chrono", "uuid", "bigdecimal"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 async-trait = "0.1"
@@ -39,7 +39,7 @@ futures-util = "0.3.31"
 async-stream = "0.3.6"
 rust-embed = { version = "8.0", features = ["axum"] }
 bytes = "1.0"
-sea-query = { version = "1.0.0-rc.1", features = ["derive"]}
+sea-query = { version = "1.0.0-rc.1", features = ["derive", "backend-mysql"]}
 
 [dev-dependencies]
 cargo-watch = "8.5"

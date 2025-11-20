@@ -5,82 +5,45 @@ use crate::services::sql::models::{
     ColumnInfo, ForeignKeyInfo, TableData, TableInfo, TableRow, UpdateData,
 };
 use crate::services::sql::query_builder::common::{table_count, table_data, update_table};
-use crate::services::sql::query_builder::postgres::{enum_values, table_columns, tables};
-use sea_query::PostgresQueryBuilder;
-use sqlx::postgres::PgPoolOptions;
-use sqlx::{Column, Pool, Postgres, Row};
+use crate::services::sql::query_builder::mysql::{table_columns, tables};
+use sea_query::MysqlQueryBuilder;
+use sqlx::mysql::MySqlPoolOptions;
+use sqlx::{Column, MySql, Pool, Row};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-pub struct PostgresConnectionPool {
-    pool: Pool<Postgres>,
+pub struct MysqlConnectionPool {
+    pool: Pool<MySql>,
 }
 
-impl PostgresConnectionPool {
-    pub fn new(pool: Pool<Postgres>) -> Self {
+impl MysqlConnectionPool {
+    pub fn new(pool: Pool<MySql>) -> Self {
         Self { pool }
-    }
-
-    /// Parse a table name that may be schema-qualified (e.g., "schema1.customers" or "customers")
-    /// Returns (table_name, schema)
-    fn parse_table_name(table_name: &str) -> (String, Option<String>) {
-        if let Some(dot_pos) = table_name.rfind('.') {
-            let schema = table_name[..dot_pos].to_string();
-            let name = table_name[dot_pos + 1..].to_string();
-            (name, Some(schema))
-        } else {
-            (table_name.to_string(), None)
-        }
     }
 
     pub async fn create_pool(
         config: DatabaseConfig,
     ) -> Result<Box<dyn ConnectionPool>, ConnectionPoolError> {
         match config {
-            DatabaseConfig::Postgres(postgres_config) => {
+            DatabaseConfig::Mysql(mysql_config) => {
                 let connection_string = format!(
-                    "postgres://{}:{}@{}:{}/{}",
-                    postgres_config.username,
-                    postgres_config.password,
-                    postgres_config.host,
-                    postgres_config.port,
-                    postgres_config.database
+                    "mysql://{}:{}@{}:{}/{}",
+                    mysql_config.username,
+                    mysql_config.password,
+                    mysql_config.host,
+                    mysql_config.port,
+                    mysql_config.database
                 );
 
-                let pool = PgPoolOptions::new()
+                let pool = MySqlPoolOptions::new()
                     .max_connections(5)
                     .connect(&connection_string)
                     .await
                     .map_err(ConnectionPoolError::SqlxError)?;
 
-                Ok(Box::new(PostgresConnectionPool::new(pool)))
+                Ok(Box::new(MysqlConnectionPool::new(pool)))
             }
             _ => Err(ConnectionPoolError::InitError),
         }
-    }
-
-    /// Fetch ENUM values for a given type name
-    async fn fetch_enum_values(
-        &self,
-        type_name: &str,
-        type_schema: Option<&str>,
-    ) -> Result<Vec<String>, ConnectionPoolError> {
-        let query = enum_values(type_name.to_string(), type_schema.map(|s| s.to_string()))
-            .to_string(PostgresQueryBuilder);
-
-        let rows = sqlx::query(&query)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::warn!("Failed to fetch enum values for type {}: {}", type_name, e);
-                ConnectionPoolError::SqlxError(e)
-            })?;
-
-        let enum_values: Vec<String> = rows
-            .into_iter()
-            .map(|row| row.get::<String, _>("enum_value"))
-            .collect();
-
-        Ok(enum_values)
     }
 
     /// Fetch column information for a specific table
@@ -89,9 +52,8 @@ impl PostgresConnectionPool {
         table_name: &str,
         table_schema: Option<&str>,
     ) -> Result<Vec<ColumnInfo>, ConnectionPoolError> {
-        // Use the modular sea-query builder instead of raw SQL
         let query = table_columns(table_name.to_string(), table_schema.map(|s| s.to_string()))
-            .to_string(PostgresQueryBuilder);
+            .to_string(MysqlQueryBuilder);
 
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -103,32 +65,14 @@ impl PostgresConnectionPool {
 
         let mut columns = Vec::new();
         for row in rows {
-            let column_name: String = row.get("column_name");
-            let data_type: String = row.get("data_type");
-            let udt_name: String = row.get("udt_name");
-            let is_nullable: String = row.get("is_nullable");
-            let column_default: Option<String> = row.get("column_default");
-            let is_primary_key: bool = row.get("is_primary_key");
-            let referenced_table_schema: Option<String> = row.get("referenced_table_schema");
-            let referenced_table_name: Option<String> = row.get("referenced_table_name");
-            let referenced_column_name: Option<String> = row.get("referenced_column_name");
-
-            // Fetch enum values if this is a USER-DEFINED type
-            let enum_values = if data_type == "USER-DEFINED" {
-                match self.fetch_enum_values(&udt_name, table_schema).await {
-                    Ok(values) if !values.is_empty() => Some(values),
-                    Ok(_) => {
-                        tracing::debug!("No enum values found for {}", udt_name);
-                        None
-                    }
-                    Err(e) => {
-                        tracing::warn!("Error fetching enum values for {}: {:?}", udt_name, e);
-                        None
-                    }
-                }
-            } else {
-                None
-            };
+            let column_name = get_string(&row, "column_name");
+            let data_type = get_string(&row, "data_type");
+            let is_nullable = get_string(&row, "is_nullable");
+            let column_default = get_option_string(&row, "column_default");
+            let is_primary_key: i64 = row.get("is_primary_key");
+            let referenced_table_schema = get_option_string(&row, "referenced_table_schema");
+            let referenced_table_name = get_option_string(&row, "referenced_table_name");
+            let referenced_column_name = get_option_string(&row, "referenced_column_name");
 
             // Build foreign key info if present
             let foreign_key = if let (Some(ref_table), Some(ref_schema), Some(ref_col)) = (
@@ -149,9 +93,9 @@ impl PostgresConnectionPool {
                 name: column_name,
                 data_type,
                 is_nullable: is_nullable == "YES",
-                is_primary_key,
+                is_primary_key: is_primary_key == 1,
                 default_value: column_default,
-                enum_values,
+                enum_values: None, // MySQL enums are handled differently, simplified for now
                 foreign_key,
             });
         }
@@ -160,7 +104,7 @@ impl PostgresConnectionPool {
     }
 
     /// Parse query result rows into TableRow structures
-    fn parse_rows(rows: Vec<sqlx::postgres::PgRow>) -> Vec<TableRow> {
+    fn parse_rows(rows: Vec<sqlx::mysql::MySqlRow>) -> Vec<TableRow> {
         let table_rows: Vec<TableRow> = rows
             .into_iter()
             .enumerate()
@@ -178,13 +122,27 @@ impl PostgresConnectionPool {
                         Ok(Some(value)) => value,
                         Ok(None) => "".to_string(),
                         Err(e) => {
-                            tracing::warn!(
-                                "Failed to decode column {} in row {}: {}",
-                                column_name,
-                                row_idx,
-                                e
-                            );
-                            "[DECODE ERROR]".to_string()
+                            // Try to decode as other common types if string fails
+                            if let Ok(Some(v)) = row.try_get::<Option<i64>, _>(column_name.as_str())
+                            {
+                                v.to_string()
+                            } else if let Ok(Some(v)) =
+                                row.try_get::<Option<f64>, _>(column_name.as_str())
+                            {
+                                v.to_string()
+                            } else if let Ok(Some(v)) =
+                                row.try_get::<Option<bool>, _>(column_name.as_str())
+                            {
+                                v.to_string()
+                            } else {
+                                tracing::warn!(
+                                    "Failed to decode column {} in row {}: {}",
+                                    column_name,
+                                    row_idx,
+                                    e
+                                );
+                                "[DECODE ERROR]".to_string()
+                            }
                         }
                     };
 
@@ -202,14 +160,43 @@ impl PostgresConnectionPool {
     }
 }
 
+/// Helper to safely get a string from a row, handling potential VARBINARY types
+fn get_string(row: &sqlx::mysql::MySqlRow, col: &str) -> String {
+    match row.try_get::<String, _>(col) {
+        Ok(val) => val,
+        Err(_) => match row.try_get::<Vec<u8>, _>(col) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(e) => {
+                tracing::error!("Failed to decode column {}: {}", col, e);
+                String::new()
+            }
+        },
+    }
+}
+
+/// Helper to safely get an optional string from a row, handling potential VARBINARY types
+fn get_option_string(row: &sqlx::mysql::MySqlRow, col: &str) -> Option<String> {
+    match row.try_get::<Option<String>, _>(col) {
+        Ok(val) => val,
+        Err(_) => match row.try_get::<Option<Vec<u8>>, _>(col) {
+            Ok(Some(bytes)) => Some(String::from_utf8_lossy(&bytes).into_owned()),
+            Ok(None) => None,
+            Err(e) => {
+                tracing::error!("Failed to decode column {}: {}", col, e);
+                None
+            }
+        },
+    }
+}
+
 #[async_trait::async_trait]
-impl ConnectionPool for PostgresConnectionPool {
+impl ConnectionPool for MysqlConnectionPool {
     fn database_type(&self) -> DatabaseType {
-        DatabaseType::Postgres
+        DatabaseType::Mysql
     }
 
     async fn tables(&self) -> Result<Vec<TableInfo>, ConnectionPoolError> {
-        let query = tables().to_string(PostgresQueryBuilder);
+        let query = tables().to_string(MysqlQueryBuilder);
 
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -222,10 +209,9 @@ impl ConnectionPool for PostgresConnectionPool {
         let mut tables: HashMap<String, TableInfo> = HashMap::new();
 
         for row in rows {
-            let table_name: String = row.get("table_name");
-            let table_schema: String = row.get("table_schema");
-            let column_name: Option<String> = row.get("column_name");
-            let table_schema_clone = table_schema.clone();
+            let table_name = get_string(&row, "table_name");
+            let table_schema = get_string(&row, "table_schema");
+            let column_name = get_option_string(&row, "column_name");
 
             let table_key = format!("{}.{}", table_schema, table_name);
 
@@ -240,27 +226,13 @@ impl ConnectionPool for PostgresConnectionPool {
 
             // Add column if present
             if let Some(column_name) = column_name {
-                let data_type: String = row.get("data_type");
-                let udt_name: String = row.get("udt_name");
-                let is_nullable: String = row.get("is_nullable");
-                let column_default: Option<String> = row.get("column_default");
-                let is_primary_key: bool = row.get("is_primary_key");
-                let referenced_table_schema: Option<String> = row.get("referenced_table_schema");
-                let referenced_table_name: Option<String> = row.get("referenced_table_name");
-                let referenced_column_name: Option<String> = row.get("referenced_column_name");
-
-                // Fetch enum values if this is a USER-DEFINED type
-                let enum_values = if data_type == "USER-DEFINED" {
-                    match self
-                        .fetch_enum_values(&udt_name, Some(&table_schema_clone))
-                        .await
-                    {
-                        Ok(values) if !values.is_empty() => Some(values),
-                        _ => None,
-                    }
-                } else {
-                    None
-                };
+                let data_type = get_string(&row, "data_type");
+                let is_nullable = get_string(&row, "is_nullable");
+                let column_default = get_option_string(&row, "column_default");
+                let is_primary_key: i64 = row.get("is_primary_key");
+                let referenced_table_schema = get_option_string(&row, "referenced_table_schema");
+                let referenced_table_name = get_option_string(&row, "referenced_table_name");
+                let referenced_column_name = get_option_string(&row, "referenced_column_name");
 
                 // Build foreign key info if present
                 let foreign_key = if let (Some(ref_table), Some(ref_schema), Some(ref_col)) = (
@@ -281,9 +253,9 @@ impl ConnectionPool for PostgresConnectionPool {
                     name: column_name,
                     data_type,
                     is_nullable: is_nullable == "YES",
-                    is_primary_key,
+                    is_primary_key: is_primary_key == 1,
                     default_value: column_default,
-                    enum_values,
+                    enum_values: None,
                     foreign_key,
                 };
 
@@ -315,13 +287,18 @@ impl ConnectionPool for PostgresConnectionPool {
             page_size
         );
 
-        // Parse schema from table name if present
-        let (table_name_only, table_schema) = Self::parse_table_name(&table_name);
+        // Simple table name parsing - MySQL doesn't use schemas in the same way as Postgres
+        // but we'll support the format "database.table"
+        let (table_name_only, table_schema) = if let Some(dot_pos) = table_name.rfind('.') {
+            (
+                table_name[dot_pos + 1..].to_string(),
+                Some(table_name[..dot_pos].to_string()),
+            )
+        } else {
+            (table_name.clone(), None)
+        };
 
-        // Default to "public" schema if not specified to avoid ambiguity when same table exists in multiple schemas
-        let table_schema = table_schema.or(Some("public".to_string()));
-
-        // Fetch column information using the reusable method
+        // Fetch column information
         let columns = self
             .fetch_table_columns(&table_name_only, table_schema.as_deref())
             .await?;
@@ -337,7 +314,7 @@ impl ConnectionPool for PostgresConnectionPool {
 
         let limit = page_size.unwrap_or(10);
         let offset = page.map(|p| (p - 1) * limit).unwrap_or(0);
-        // query.push_str(&format!(" LIMIT {} OFFSET {}", limit, offset));
+
         let filters_btree_map: Option<BTreeMap<String, String>> = filters.map(|f| {
             let btree_filters: BTreeMap<String, String> = f.into_iter().collect();
             btree_filters
@@ -350,9 +327,10 @@ impl ConnectionPool for PostgresConnectionPool {
             limit,
             offset,
             filters_btree_map,
-            "TEXT",
+            "CHAR",
         )
-        .to_string(PostgresQueryBuilder);
+        .to_string(MysqlQueryBuilder);
+
         // Execute query and parse results
         let rows = sqlx::query(&query)
             .fetch_all(&self.pool)
@@ -377,14 +355,17 @@ impl ConnectionPool for PostgresConnectionPool {
     }
 
     async fn table_count(&self, table_name: String) -> Result<u64, ConnectionPoolError> {
-        // Parse schema from table name if present
-        let (table_name_only, table_schema) = Self::parse_table_name(&table_name);
+        let (table_name_only, table_schema) = if let Some(dot_pos) = table_name.rfind('.') {
+            (
+                table_name[dot_pos + 1..].to_string(),
+                Some(table_name[..dot_pos].to_string()),
+            )
+        } else {
+            (table_name.clone(), None)
+        };
 
-        // Default to "public" schema if not specified to avoid ambiguity when same table exists in multiple schemas
-        let table_schema = table_schema.or(Some("public".to_string()));
-
-        let query = table_count(table_name_only.clone(), table_schema.clone())
-            .to_string(PostgresQueryBuilder);
+        let query =
+            table_count(table_name_only.clone(), table_schema.clone()).to_string(MysqlQueryBuilder);
 
         let count = sqlx::query(&query)
             .fetch_one(&self.pool)
@@ -404,11 +385,15 @@ impl ConnectionPool for PostgresConnectionPool {
             return Ok(());
         }
 
-        // Parse schema from table name if present
-        let (table_name_only, table_schema) = Self::parse_table_name(&update_data.table_name);
-
-        // Default to "public" schema if not specified to avoid ambiguity when same table exists in multiple schemas
-        let table_schema = table_schema.or(Some("public".to_string()));
+        let (table_name_only, table_schema) =
+            if let Some(dot_pos) = update_data.table_name.rfind('.') {
+                (
+                    update_data.table_name[dot_pos + 1..].to_string(),
+                    Some(update_data.table_name[..dot_pos].to_string()),
+                )
+            } else {
+                (update_data.table_name.clone(), None)
+            };
 
         // Fetch column information for the table
         let columns = self
@@ -472,12 +457,12 @@ impl ConnectionPool for PostgresConnectionPool {
                 table_schema.clone(),
                 change.primary_key_values.clone(),
                 update_values,
-                "TEXT",
+                "CHAR",
             )
-            .to_string(PostgresQueryBuilder);
+            .to_string(MysqlQueryBuilder);
 
             // Execute UPDATE statement
-            let _: sqlx::postgres::PgQueryResult = sqlx::query(&update_query)
+            let _: sqlx::mysql::MySqlQueryResult = sqlx::query(&update_query)
                 .execute(&self.pool)
                 .await
                 .map_err(|e| {

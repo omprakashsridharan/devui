@@ -11,6 +11,7 @@ use serde::Serialize;
 #[derive(Serialize, Clone)]
 pub enum DatabaseType {
     Postgres,
+    Mysql,
 }
 
 #[derive(Clone, Serialize)]

@@ -9,6 +9,16 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DatabaseConfig {
     Postgres(PostgresConfig),
+    Mysql(MysqlConfig),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MysqlConfig {
+    pub host: String,
+    pub port: u16,
+    pub database: String,
+    pub username: String,
+    pub password: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +46,15 @@ impl Config {
         }
         self.database_configs
             .insert(connection_name, DatabaseConfig::Postgres(config));
+        self
+    }
+
+    pub fn with_mysql(mut self, connection_name: String, config: MysqlConfig) -> Self {
+        if self.database_configs.contains_key(&connection_name) {
+            panic!("Connection with name {} already exists", connection_name);
+        }
+        self.database_configs
+            .insert(connection_name, DatabaseConfig::Mysql(config));
         self
     }
 }
